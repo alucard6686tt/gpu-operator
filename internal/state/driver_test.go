@@ -36,7 +36,7 @@ import (
 
 	nvidiav1alpha1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1alpha1"
 	"github.com/NVIDIA/gpu-operator/internal/render"
-	"github.com/NVIDIA/gpu-operator/internal/utils"
+	"github.com/NVIDIA/gpu-operator/internal/utils/ptr"
 )
 
 const (
@@ -105,7 +105,7 @@ func TestDriverRenderRDMA(t *testing.T) {
 	renderData.AdditionalConfigs = getSampleAdditionalConfigs()
 
 	renderData.GPUDirectRDMA = &nvidiav1alpha1.GPUDirectRDMASpec{
-		Enabled: utils.BoolPtr(true),
+		Enabled: ptr.Bool(true),
 	}
 
 	objs, err := stateDriver.renderer.RenderObjects(
@@ -138,8 +138,8 @@ func TestDriverRDMAHostMOFED(t *testing.T) {
 	renderData.AdditionalConfigs = getSampleAdditionalConfigs()
 
 	renderData.GPUDirectRDMA = &nvidiav1alpha1.GPUDirectRDMASpec{
-		Enabled:      utils.BoolPtr(true),
-		UseHostMOFED: utils.BoolPtr(true),
+		Enabled:      ptr.Bool(true),
+		UseHostMOFED: ptr.Bool(true),
 	}
 
 	objs, err := stateDriver.renderer.RenderObjects(
@@ -266,7 +266,7 @@ func TestDriverGDS(t *testing.T) {
 	renderData.GDS = &gdsDriverSpec{
 		ImagePath: "nvcr.io/nvidia/cloud-native/nvidia-fs:2.16.1",
 		Spec: &nvidiav1alpha1.GPUDirectStorageSpec{
-			Enabled:          utils.BoolPtr(true),
+			Enabled:          ptr.Bool(true),
 			ImagePullSecrets: []string{"ngc-secrets"},
 		},
 	}
@@ -304,7 +304,7 @@ func TestDriverGDRCopy(t *testing.T) {
 	renderData.GDRCopy = &gdrcopyDriverSpec{
 		ImagePath: "nvcr.io/nvidia/cloud-native/gdrdrv:v2.4.1",
 		Spec: &nvidiav1alpha1.GDRCopySpec{
-			Enabled:          utils.BoolPtr(true),
+			Enabled:          ptr.Bool(true),
 			ImagePullSecrets: []string{"ngc-secrets"},
 		},
 	}
@@ -361,7 +361,7 @@ func TestDriverGDRCopyOpenShift(t *testing.T) {
 	renderData.GDRCopy = &gdrcopyDriverSpec{
 		ImagePath: "nvcr.io/nvidia/cloud-native/gdrdrv:v2.4.1-rhcos4.13",
 		Spec: &nvidiav1alpha1.GDRCopySpec{
-			Enabled:          utils.BoolPtr(true),
+			Enabled:          ptr.Bool(true),
 			ImagePullSecrets: []string{"ngc-secret"},
 		},
 	}
@@ -469,7 +469,7 @@ func TestDriverPrecompiled(t *testing.T) {
 	require.True(t, ok)
 
 	renderData := getMinimalDriverRenderData()
-	renderData.Driver.Spec.UsePrecompiled = utils.BoolPtr(true)
+	renderData.Driver.Spec.UsePrecompiled = ptr.Bool(true)
 	renderData.Driver.Name = "nvidia-gpu-driver-ubuntu22.04"
 	renderData.Driver.AppName = "nvidia-gpu-driver-ubuntu22.04-646cdfdb96"
 	renderData.Driver.ImagePath = "nvcr.io/nvidia/driver:535-5.4.0-150-generic-ubuntu22.04"
@@ -703,7 +703,7 @@ func getSampleAdditionalConfigs() *additionalConfigs {
 				VolumeSource: corev1.VolumeSource{
 					HostPath: &corev1.HostPathVolumeSource{
 						Path: "/opt/config/test-host-path",
-						Type: utils.HostPathTypePtr(corev1.HostPathDirectoryOrCreate),
+						Type: ptr.HostPathType(corev1.HostPathDirectoryOrCreate),
 					},
 				},
 			},
@@ -712,7 +712,7 @@ func getSampleAdditionalConfigs() *additionalConfigs {
 				VolumeSource: corev1.VolumeSource{
 					HostPath: &corev1.HostPathVolumeSource{
 						Path: "/opt/config/test-host-path-ro",
-						Type: utils.HostPathTypePtr(corev1.HostPathDirectoryOrCreate),
+						Type: ptr.HostPathType(corev1.HostPathDirectoryOrCreate),
 					},
 				},
 			},
@@ -799,7 +799,7 @@ func TestDriverVGPULicensingSecret(t *testing.T) {
 
 	renderData.Driver.Spec.LicensingConfig = &nvidiav1alpha1.DriverLicensingConfigSpec{
 		SecretName: "licensing-config-secret",
-		NLSEnabled: utils.BoolPtr(true),
+		NLSEnabled: ptr.Bool(true),
 	}
 
 	renderData.AdditionalConfigs = &additionalConfigs{
@@ -868,13 +868,13 @@ func TestDriverSecretEnv(t *testing.T) {
 	renderData.GDS = &gdsDriverSpec{
 		ImagePath: "nvcr.io/nvidia/cloud-native/nvidia-fs:2.16.1",
 		Spec: &nvidiav1alpha1.GPUDirectStorageSpec{
-			Enabled: utils.BoolPtr(true),
+			Enabled: ptr.Bool(true),
 		},
 	}
 	renderData.GDRCopy = &gdrcopyDriverSpec{
 		ImagePath: "nvcr.io/nvidia/cloud-native/gdrdrv:v2.4.1",
 		Spec: &nvidiav1alpha1.GDRCopySpec{
-			Enabled: utils.BoolPtr(true),
+			Enabled: ptr.Bool(true),
 		},
 	}
 

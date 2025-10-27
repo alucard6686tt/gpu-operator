@@ -27,7 +27,7 @@ import (
 	"github.com/NVIDIA/gpu-operator/api/nvidia/v1alpha1"
 	"github.com/NVIDIA/gpu-operator/controllers/clusterinfo"
 	"github.com/NVIDIA/gpu-operator/internal/consts"
-	"github.com/NVIDIA/gpu-operator/internal/utils"
+	"github.com/NVIDIA/gpu-operator/internal/utils/ptr"
 )
 
 // RepoConfigPathMap indicates standard OS specific paths for repository configuration files
@@ -61,19 +61,19 @@ var SubscriptionPathMap = map[string]MountPathToVolumeSource{
 		"/run/secrets/etc-pki-entitlement": corev1.VolumeSource{
 			HostPath: &corev1.HostPathVolumeSource{
 				Path: "/etc/pki/entitlement",
-				Type: utils.HostPathTypePtr(corev1.HostPathDirectory),
+				Type: ptr.HostPathType(corev1.HostPathDirectory),
 			},
 		},
 		"/run/secrets/redhat.repo": corev1.VolumeSource{
 			HostPath: &corev1.HostPathVolumeSource{
 				Path: "/etc/yum.repos.d/redhat.repo",
-				Type: utils.HostPathTypePtr(corev1.HostPathFile),
+				Type: ptr.HostPathType(corev1.HostPathFile),
 			},
 		},
 		"/run/secrets/rhsm": corev1.VolumeSource{
 			HostPath: &corev1.HostPathVolumeSource{
 				Path: "/etc/rhsm",
-				Type: utils.HostPathTypePtr(corev1.HostPathDirectory),
+				Type: ptr.HostPathType(corev1.HostPathDirectory),
 			},
 		},
 	},
@@ -81,19 +81,19 @@ var SubscriptionPathMap = map[string]MountPathToVolumeSource{
 		"/run/secrets/etc-pki-entitlement": corev1.VolumeSource{
 			HostPath: &corev1.HostPathVolumeSource{
 				Path: "/etc/pki/entitlement",
-				Type: utils.HostPathTypePtr(corev1.HostPathDirectory),
+				Type: ptr.HostPathType(corev1.HostPathDirectory),
 			},
 		},
 		"/run/secrets/redhat.repo": corev1.VolumeSource{
 			HostPath: &corev1.HostPathVolumeSource{
 				Path: "/etc/yum.repos.d/redhat.repo",
-				Type: utils.HostPathTypePtr(corev1.HostPathFile),
+				Type: ptr.HostPathType(corev1.HostPathFile),
 			},
 		},
 		"/run/secrets/rhsm": corev1.VolumeSource{
 			HostPath: &corev1.HostPathVolumeSource{
 				Path: "/etc/rhsm",
-				Type: utils.HostPathTypePtr(corev1.HostPathDirectory),
+				Type: ptr.HostPathType(corev1.HostPathDirectory),
 			},
 		},
 	},
@@ -101,13 +101,13 @@ var SubscriptionPathMap = map[string]MountPathToVolumeSource{
 		"/etc/zypp/credentials.d": corev1.VolumeSource{
 			HostPath: &corev1.HostPathVolumeSource{
 				Path: "/etc/zypp/credentials.d",
-				Type: utils.HostPathTypePtr(corev1.HostPathDirectory),
+				Type: ptr.HostPathType(corev1.HostPathDirectory),
 			},
 		},
 		"/etc/SUSEConnect": corev1.VolumeSource{
 			HostPath: &corev1.HostPathVolumeSource{
 				Path: "/etc/SUSEConnect",
-				Type: utils.HostPathTypePtr(corev1.HostPathFileOrCreate),
+				Type: ptr.HostPathType(corev1.HostPathFileOrCreate),
 			},
 		},
 	},
@@ -115,13 +115,13 @@ var SubscriptionPathMap = map[string]MountPathToVolumeSource{
 		"/etc/zypp/credentials.d": corev1.VolumeSource{
 			HostPath: &corev1.HostPathVolumeSource{
 				Path: "/etc/zypp/credentials.d",
-				Type: utils.HostPathTypePtr(corev1.HostPathDirectory),
+				Type: ptr.HostPathType(corev1.HostPathDirectory),
 			},
 		},
 		"/etc/SUSEConnect": corev1.VolumeSource{
 			HostPath: &corev1.HostPathVolumeSource{
 				Path: "/etc/SUSEConnect",
-				Type: utils.HostPathTypePtr(corev1.HostPathFileOrCreate),
+				Type: ptr.HostPathType(corev1.HostPathFileOrCreate),
 			},
 		},
 	},

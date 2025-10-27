@@ -24,7 +24,6 @@ import (
 	"strings"
 
 	"github.com/davecgh/go-spew/spew"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/rand"
 )
 
@@ -56,21 +55,6 @@ func GetFilesWithSuffix(baseDir string, suffixes ...string) ([]string, error) {
 		return nil, fmt.Errorf("error traversing directory tree: %w", err)
 	}
 	return files, nil
-}
-
-// BoolPtr returns a pointer to the bool value passed in.
-func BoolPtr(v bool) *bool {
-	return &v
-}
-
-// Int64Ptr returns a pointer to the int64 passed in.
-func Int64Ptr(v int64) *int64 {
-	return &v
-}
-
-// HostPathTypePtr returns a pointer to the HostPathType passed in.
-func HostPathTypePtr(v corev1.HostPathType) *corev1.HostPathType {
-	return &v
 }
 
 // GetObjectHash invokes Sum32 Hash function to return hash value of an unstructured Object
