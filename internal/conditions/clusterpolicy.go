@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -57,45 +58,47 @@ func (u *clusterPolicyUpdater) SetConditionsError(ctx context.Context, cr any, r
 
 func (u *clusterPolicyUpdater) setConditions(ctx context.Context, cr *nvidiav1.ClusterPolicy, statusType, reason, message string) error {
 	reqLogger := log.FromContext(ctx)
-	// Fetch latest instance and update state to avoid version mismatch
-	instance := &nvidiav1.ClusterPolicy{}
-	err := u.client.Get(ctx, types.NamespacedName{Name: cr.Name}, instance)
-	if err != nil {
-		reqLogger.Error(err, "Failed to get ClusterPolicy instance for status update", "name", cr.Name)
+
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		instance := &nvidiav1.ClusterPolicy{}
+		err := u.client.Get(ctx, types.NamespacedName{Name: cr.Name}, instance)
+		if err != nil {
+			reqLogger.Error(err, "Failed to get ClusterPolicy instance for status update", "name", cr.Name)
+			return err
+		}
+		switch statusType {
+		case Ready:
+			meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+				Type:    Ready,
+				Status:  metav1.ConditionTrue,
+				Reason:  reason,
+				Message: message,
+			})
+			meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+				Type:   Error,
+				Status: metav1.ConditionFalse,
+				Reason: Ready,
+			})
+		case Error:
+			meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+				Type:   Ready,
+				Status: metav1.ConditionFalse,
+				Reason: Error,
+			})
+			meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+				Type:    Error,
+				Status:  metav1.ConditionTrue,
+				Reason:  reason,
+				Message: message,
+			})
+		default:
+			reqLogger.Error(nil, "Unknown status type provided", "statusType", statusType)
+			return fmt.Errorf("unknown status type provided: %s", statusType)
+		}
+		err = u.client.Status().Update(ctx, instance)
+		if err != nil {
+			reqLogger.Error(err, "Failed to update ClusterPolicy status", "name", cr.Name)
+		}
 		return err
-	}
-
-	switch statusType {
-	case Ready:
-		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
-			Type:    Ready,
-			Status:  metav1.ConditionTrue,
-			Reason:  reason,
-			Message: message,
-		})
-
-		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
-			Type:   Error,
-			Status: metav1.ConditionFalse,
-			Reason: Ready,
-		})
-	case Error:
-		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
-			Type:   Ready,
-			Status: metav1.ConditionFalse,
-			Reason: Error,
-		})
-
-		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
-			Type:    Error,
-			Status:  metav1.ConditionTrue,
-			Reason:  reason,
-			Message: message,
-		})
-	default:
-		reqLogger.Error(nil, "Unknown status type provided", "statusType", statusType)
-		return fmt.Errorf("unknown status type provided: %s", statusType)
-	}
-
-	return u.client.Status().Update(ctx, instance)
+	})
 }
