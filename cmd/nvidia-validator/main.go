@@ -78,6 +78,12 @@ type Plugin struct {
 	kubeClient kubernetes.Interface
 }
 
+// [Custom] custom-Validator component
+type CustomValidator struct {
+	ctx        context.Context
+	kubeClient kubernetes.Interface
+}
+
 // Toolkit component
 type Toolkit struct{}
 
@@ -130,6 +136,12 @@ var (
 	hostRootFlag                  string
 	driverInstallDirFlag          string
 	driverInstallDirCtrPathFlag   string
+	// [Custom] Custom-Validator MIG first
+	customMigValidatorImage   string
+	customMigValidatorPodPath string
+	// [Custom] Custom-Validator GPU first
+	customGpuValidatorImage   string
+	customGpuValidatorPodPath string
 )
 
 // defaultGPUWorkloadConfig is "vm-passthrough" unless
@@ -137,8 +149,8 @@ var (
 var defaultGPUWorkloadConfig = gpuWorkloadConfigVMPassthrough
 
 const (
-	// defaultStatusPath indicates directory to create all validation status files
-	defaultStatusPath = "/run/nvidia/validations"
+	// [Custom] defaultStatusPath indicates directory to create all validation status files
+	defaultStatusPath = "/run/nvidia/custom-validations"
 	// defaultSleepIntervalSeconds indicates sleep interval in seconds between validation command retries
 	defaultSleepIntervalSeconds = 5
 	// defaultMetricsPort indicates the port on which the metrics will be exposed.
@@ -224,6 +236,17 @@ const (
 	wslNvidiaSMIPath = "/usr/lib/wsl/lib/nvidia-smi"
 	// shell indicates what shell to use when invoking commands in a subprocess
 	shell = "sh"
+
+	// [Custom] custom validator =======================
+	// custom mig validator statusFile
+	customMigValidatorStatusFile = "custom-mig-validator-ready"
+	// custom mig validator statusFile
+	customGpuValidatorStatusFile = "custom-gpu-validator-ready"
+	// custom-mig-validator represents label for custom-mig-validator workload validation pod
+	customMigValidatorLabelValue = "nvidia-custom-mig-validator"
+	// custom-gpu-validator represents label for custom-mig-validator workload validation pod
+	customGpuValidatorLabelValue = "nvidia-custom-gpu-validator"
+
 )
 
 func main() {
@@ -356,6 +379,36 @@ func main() {
 			Destination: &driverInstallDirCtrPathFlag,
 			EnvVars:     []string{"DRIVER_INSTALL_DIR_CTR_PATH"},
 		},
+		// [Custom] custom_validator path/image
+		&cli.StringFlag{
+			Name:        "custom-mig-validator-image",
+			Value:       customMigValidatorImage,
+			Usage:       "customMigValidatorImage",
+			Destination: &customMigValidatorImage,
+			EnvVars:     []string{"CUSTOM_MIG_VALIDATOR_IMAGE"},
+		},
+		&cli.StringFlag{
+			Name:        "custom-mig-validator-pod-path",
+			Value:       customMigValidatorPodPath,
+			Usage:       "customMigValidatorPodPath",
+			Destination: &customMigValidatorPodPath,
+			EnvVars:     []string{"CUSTOM_MIG_VALIDATOR_POD_PATH"},
+		},
+		&cli.StringFlag{
+			Name:        "custom-gpu-validator-image",
+			Value:       customGpuValidatorImage,
+			Usage:       "customGpuValidatorImage",
+			Destination: &customGpuValidatorImage,
+			EnvVars:     []string{"CUSTOM_GPU_VALIDATOR_IMAGE"},
+		},
+		&cli.StringFlag{
+			Name:        "custom-gpu-validator-pod-path",
+			Value:       customGpuValidatorPodPath,
+			Usage:       "customGpuValidatorPodPath",
+			Destination: &customGpuValidatorPodPath,
+			EnvVars:     []string{"CUSTOM_GPU_VALIDATOR_POD_PATH"},
+		},
+
 	}
 
 	// Log version info
@@ -401,6 +454,26 @@ func validateFlags(c *cli.Context) error {
 	if componentFlag == "cuda" && namespaceFlag == "" {
 		return fmt.Errorf("invalid -ns <namespace> flag: must not be empty string for cuda validation")
 	}
+	// [Custom] 
+	if componentFlag == "custom-mig-validator" {
+		if nodeNameFlag == "" {
+			return fmt.Errorf("invalid -n <node-name> flag: must not be empty string for plugin validation")
+		}
+		if namespaceFlag == "" {
+			return fmt.Errorf("invalid -ns <namespace> flag: must not be empty string for plugin validation")
+		}
+	}
+
+	if componentFlag == "custom-gpu-validator" {
+		if nodeNameFlag == "" {
+			return fmt.Errorf("invalid -n <node-name> flag: must not be empty string for plugin validation")
+		}
+		if namespaceFlag == "" {
+			return fmt.Errorf("invalid -ns <namespace> flag: must not be empty string for plugin validation")
+		}
+	}
+	// [Custom-End]
+
 	if componentFlag == "metrics" {
 		if metricsPort == defaultMetricsPort {
 			return fmt.Errorf("invalid -p <port> flag: must not be empty or 0 for the metrics component")
@@ -438,6 +511,12 @@ func isValidComponent() bool {
 		fallthrough
 	case "cc-manager":
 		fallthrough
+	// [Custom]
+	case "custom-mig-validator":
+		fallthrough
+	case "custom-gpu-validator":
+		fallthrough
+	// [Cusom-end]
 	case "nvidia-fs":
 		fallthrough
 	case "gdrcopy":
@@ -608,6 +687,27 @@ func start(c *cli.Context) error {
 			return fmt.Errorf("error validating CC Manager installation: %w", err)
 		}
 		return nil
+	// [Custom]
+	case "custom-mig-validator":
+		CustomValidator := &CustomValidator{
+			ctx: c.Context,
+		}
+		err := CustomValidator.validate("mig_gpu")
+		if err != nil {
+			return fmt.Errorf("error validating mig-CustomValidator: %w", err)
+		}
+		return nil
+
+	case "custom-gpu-validator":
+		CustomValidator := &CustomValidator{
+			ctx: c.Context,
+		}
+		err := CustomValidator.validate("generic_gpu")
+		if err != nil {
+			return fmt.Errorf("error validating gpu-CustomValidator: %w", err)
+		}
+		return nil
+	// [Custom-End]
 	default:
 		return fmt.Errorf("invalid component specified for validation: %s", componentFlag)
 	}
@@ -1232,6 +1332,165 @@ func (p *Plugin) runWorkload() error {
 	return nil
 }
 
+func (cv *CustomValidator) runWorkload(gpu_type string) error {
+	ctx := cv.ctx
+	// customvalidator default
+	// customValidatorImagePath := customGpuValidatorPodPath
+	customValidatorPodPath := customGpuValidatorPodPath
+	customValidatorLabelValue := customGpuValidatorLabelValue
+
+	if gpu_type == "mig_gpu" {
+		// customValidatorImagePath = customMigValidatorImage
+		customValidatorPodPath = customMigValidatorPodPath
+		customValidatorLabelValue = customMigValidatorLabelValue
+	}
+	if gpu_type == "generic_gpu" {
+		// customValidatorImagePath = customGpuValidatorImage
+		customValidatorPodPath = customGpuValidatorPodPath
+		customValidatorLabelValue = customGpuValidatorLabelValue
+	}
+	// load podSpec
+	pod, err := loadPodSpec(customValidatorPodPath)
+	if err != nil {
+		return err
+	}
+
+	pod.ObjectMeta.Namespace = namespaceFlag
+	// image := os.Getenv(customValidatorImagePath)
+	image := os.Getenv(validatorImageEnvName)
+	pod.Spec.Containers[0].Image = image
+	pod.Spec.InitContainers[0].Image = image
+
+	imagePullPolicy := os.Getenv(validatorImagePullPolicyEnvName)
+	if imagePullPolicy != "" {
+		pod.Spec.Containers[0].ImagePullPolicy = corev1.PullPolicy(imagePullPolicy)
+		pod.Spec.InitContainers[0].ImagePullPolicy = corev1.PullPolicy(imagePullPolicy)
+	}
+
+	if os.Getenv(validatorImagePullSecretsEnvName) != "" {
+		pullSecrets := strings.Split(os.Getenv(validatorImagePullSecretsEnvName), ",")
+		for _, secret := range pullSecrets {
+			pod.Spec.ImagePullSecrets = append(pod.Spec.ImagePullSecrets, corev1.LocalObjectReference{Name: secret})
+		}
+	}
+	if os.Getenv(validatorRuntimeClassEnvName) != "" {
+		runtimeClass := os.Getenv(validatorRuntimeClassEnvName)
+		pod.Spec.RuntimeClassName = &runtimeClass
+	}
+	// get pod by labl selector on gp node
+	validatorDaemonset, err := cv.kubeClient.AppsV1().DaemonSets(namespaceFlag).Get(ctx, "nvidia-operator-custom-validator", meta_v1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("unable to retrieve the operator validator daemonset: %w", err)
+	}
+
+	// update owner reference
+	pod.SetOwnerReferences(validatorDaemonset.ObjectMeta.OwnerReferences)
+	// set pod tolerations
+	pod.Spec.Tolerations = validatorDaemonset.Spec.Template.Spec.Tolerations
+	// update podSpec with node name, so it will just run on current node
+	pod.Spec.NodeName = nodeNameFlag
+
+	resourceName, err := cv.getGPUResourceName(gpu_type)
+
+	if err != nil {
+		return err
+	}
+
+	gpuResource := corev1.ResourceList{
+		resourceName: resource.MustParse("1"),
+	}
+
+	pod.Spec.InitContainers[0].Resources.Limits = gpuResource
+	pod.Spec.InitContainers[0].Resources.Requests = gpuResource
+	opts := meta_v1.ListOptions{LabelSelector: labels.Set{"app": customValidatorLabelValue}.AsSelector().String(),
+		FieldSelector: fields.Set{"spec.nodeName": nodeNameFlag}.AsSelector().String()}
+
+	// check if plugin validation pod is already running and cleanup.
+	podList, err := cv.kubeClient.CoreV1().Pods(namespaceFlag).List(ctx, opts)
+	if err != nil {
+		return fmt.Errorf("cannot list existing validation pods: %w", err)
+	}
+
+	if podList != nil && len(podList.Items) > 0 {
+		propagation := meta_v1.DeletePropagationBackground
+		gracePeriod := int64(0)
+		options := meta_v1.DeleteOptions{PropagationPolicy: &propagation, GracePeriodSeconds: &gracePeriod}
+		err = cv.kubeClient.CoreV1().Pods(namespaceFlag).Delete(ctx, podList.Items[0].ObjectMeta.Name, options)
+		if err != nil {
+			return fmt.Errorf("cannot delete previous validation pod: %w", err)
+		}
+	}
+
+	// wait for customMigValidator validation pod to be ready.
+	newPod, err := cv.kubeClient.CoreV1().Pods(namespaceFlag).Create(ctx, pod, meta_v1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create customMigValidator validation pod %s, err %w", pod.ObjectMeta.Name, err)
+	}
+
+	// make sure its available
+	err = waitForPod(ctx, cv.kubeClient, newPod.ObjectMeta.Name, namespaceFlag)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// [Custom] Custom-validaotr function
+func (cv *CustomValidator) validate(gpu_type string) error {
+
+	customvalidatorStatusFile := customGpuValidatorStatusFile // default
+
+	if gpu_type == "mig_gpu" {
+		customvalidatorStatusFile = customMigValidatorStatusFile
+	}
+	if gpu_type == "generic_gpu" {
+		customvalidatorStatusFile = customGpuValidatorStatusFile
+	}
+
+	// delete status file is already present
+	err := deleteStatusFile(outputDirFlag + "/" + customMigValidatorStatusFile)
+	if err != nil {
+		return err
+	}
+
+	// enumerate node resources and ensure GPU devices are discovered.
+	kubeConfig, err := rest.InClusterConfig()
+	if err != nil {
+		log.Errorf("Error getting config cluster - %s\n", err.Error())
+		return err
+	}
+
+	kubeClient, err := kubernetes.NewForConfig(kubeConfig)
+	if err != nil {
+		log.Errorf("Error getting k8s client - %s\n", err.Error())
+		return err
+	}
+
+	// update k8s client for the plugin
+	cv.setKubeClient(kubeClient)
+
+	// err = p.validateGPUResource()
+	// if err != nil {
+	// 	return err
+	// }
+
+	if withWorkloadFlag {
+		// workload test
+		err = cv.runWorkload(gpu_type)
+		if err != nil {
+			return err
+		}
+	}
+
+	// create plugin status file
+	err = createStatusFile(outputDirFlag + "/" + customvalidatorStatusFile)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+// [Custom-end]
+
 // waits for the pod to be created
 func waitForPod(ctx context.Context, kubeClient kubernetes.Interface, name string, namespace string) error {
 	for i := 0; i < podCreationWaitRetries; i++ {
@@ -1335,6 +1594,28 @@ func (p *Plugin) availableGenericResourceName(resources corev1.ResourceList) cor
 	return ""
 }
 
+// [Custom]
+func (cv *CustomValidator) availableMIGResourceName(resources corev1.ResourceList) corev1.ResourceName {
+	for resourceName, quantity := range resources {
+		if strings.HasPrefix(string(resourceName), migGPUResourcePrefix) && quantity.Value() >= 1 {
+			log.Debugf("Found MIG GPU resource name %s quantity %d", resourceName, quantity.Value())
+			return resourceName
+		}
+	}
+	return ""
+}
+
+func (cv *CustomValidator) availableGenericResourceName(resources corev1.ResourceList) corev1.ResourceName {
+	for resourceName, quantity := range resources {
+		if strings.HasPrefix(string(resourceName), genericGPUResourceType) && quantity.Value() >= 1 {
+			log.Debugf("Found GPU resource name %s quantity %d", resourceName, quantity.Value())
+			return resourceName
+		}
+	}
+	return ""
+}
+// [Custom-end]
+
 func (p *Plugin) getGPUResourceName() (corev1.ResourceName, error) {
 	// get node info to check allocatable GPU resources
 	node, err := getNode(p.ctx, p.kubeClient)
@@ -1357,6 +1638,34 @@ func (p *Plugin) getGPUResourceName() (corev1.ResourceName, error) {
 func (p *Plugin) setKubeClient(kubeClient kubernetes.Interface) {
 	p.kubeClient = kubeClient
 }
+
+// [Custom]
+func (cv *CustomValidator) getGPUResourceName(gpu_type string) (corev1.ResourceName, error) {
+	// get node info to check allocatable GPU resources
+	node, err := getNode(cv.ctx, cv.kubeClient)
+	if err != nil {
+		return "", fmt.Errorf("unable to fetch node by name %s to check for GPU resources: %s", nodeNameFlag, err)
+	}
+	if gpu_type == "mig_gpu" || gpu_type == "all" {
+		// use mig resource if one is available to run workload
+		if resourceName := cv.availableMIGResourceName(node.Status.Allocatable); resourceName != "" {
+			return resourceName, nil
+		}
+	}
+
+	if gpu_type == "generic_gpu" || gpu_type == "all" {
+		if resourceName := cv.availableGenericResourceName(node.Status.Allocatable); resourceName != "" {
+			return resourceName, nil
+		}
+	}
+
+	return "", fmt.Errorf("unable to find any allocatable GPU resource")
+}
+
+func (cv *CustomValidator) setKubeClient(kubeClient kubernetes.Interface) {
+	cv.kubeClient = kubeClient
+}
+// [Custom-End]
 
 func getNode(ctx context.Context, kubeClient kubernetes.Interface) (*corev1.Node, error) {
 	node, err := kubeClient.CoreV1().Nodes().Get(ctx, nodeNameFlag, meta_v1.GetOptions{})
