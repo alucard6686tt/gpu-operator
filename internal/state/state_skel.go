@@ -24,11 +24,14 @@ import (
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/NVIDIA/gpu-operator/internal/consts"
@@ -56,6 +59,64 @@ func (s *stateSkel) Name() string {
 // Description provides the State description
 func (s *stateSkel) Description() string {
 	return s.description
+}
+
+// newStateSkel builds the common state skeleton, loading the manifests from
+// manifestDir into the renderer.
+func newStateSkel(
+	k8sClient client.Client,
+	namespace string,
+	scheme *runtime.Scheme,
+	manifestDir string,
+	name string,
+	description string) (stateSkel, error) {
+
+	files, err := utils.GetFilesWithSuffix(manifestDir, render.ManifestFileSuffix...)
+	if err != nil {
+		return stateSkel{}, fmt.Errorf("failed to get files from manifest directory: %v", err)
+	}
+
+	return stateSkel{
+		name:        name,
+		description: description,
+		client:      k8sClient,
+		namespace:   namespace,
+		scheme:      scheme,
+		renderer:    render.NewRenderer(files),
+	}, nil
+}
+
+// renderObjects renders the state's manifests with the given templating data.
+func (s *stateSkel) renderObjects(ctx context.Context, data interface{}) ([]*unstructured.Unstructured, error) {
+	logger := log.FromContext(ctx)
+	logger.V(consts.LogLevelDebug).Info("Rendering objects", "State:", s.name, "data", data)
+
+	objs, err := s.renderer.RenderObjects(&render.TemplatingData{Data: data})
+	if err != nil {
+		return nil, fmt.Errorf("failed to render kubernetes manifests: %w", err)
+	}
+	return objs, nil
+}
+
+// syncObjects creates or updates the rendered objects and returns the aggregated sync
+// state. Owner references make every object (including cluster-scoped ones) garbage
+// collected when the owning CR is deleted.
+func (s *stateSkel) syncObjects(ctx context.Context, owner metav1.Object, objs []*unstructured.Unstructured) (SyncState, error) {
+	err := s.createOrUpdateObjs(ctx, func(obj *unstructured.Unstructured) error {
+		if err := controllerutil.SetControllerReference(owner, obj, s.scheme); err != nil {
+			return fmt.Errorf("failed to set controller reference for object: %w", err)
+		}
+		return nil
+	}, objs)
+	if err != nil {
+		return SyncStateNotReady, fmt.Errorf("failed to create/update objects: %w", err)
+	}
+
+	syncState, err := s.getSyncState(ctx, objs)
+	if err != nil {
+		return SyncStateNotReady, fmt.Errorf("failed to get sync state: %w", err)
+	}
+	return syncState, nil
 }
 
 func getSupportedGVKs() []schema.GroupVersionKind {
@@ -159,6 +220,24 @@ func getSupportedGVKs() []schema.GroupVersionKind {
 			Group:   "monitoring.coreos.com",
 			Kind:    "PrometheusRule",
 			Version: "v1",
+		},
+		// ResourceClaimTemplate is listed under every resource.k8s.io version because
+		// which one a cluster serves depends on its Kubernetes version; unserved
+		// versions are skipped via IsNoMatchError during deletion.
+		{
+			Group:   "resource.k8s.io",
+			Kind:    "ResourceClaimTemplate",
+			Version: "v1",
+		},
+		{
+			Group:   "resource.k8s.io",
+			Kind:    "ResourceClaimTemplate",
+			Version: "v1beta2",
+		},
+		{
+			Group:   "resource.k8s.io",
+			Kind:    "ResourceClaimTemplate",
+			Version: "v1beta1",
 		},
 	}
 }
@@ -290,6 +369,54 @@ func (s *stateSkel) addStateSpecificLabels(obj *unstructured.Unstructured) {
 	}
 	labels[consts.StateLabel] = s.name
 	obj.SetLabels(labels)
+}
+
+// nolint
+func (s *stateSkel) handleStateObjectsDeletion(ctx context.Context) (SyncState, error) {
+	reqLogger := log.FromContext(ctx)
+	reqLogger.V(consts.LogLevelInfo).Info(
+		"State spec in CR is nil, deleting existing objects if needed", "State:", s.name)
+	found, err := s.deleteStateRelatedObjects(ctx)
+	if err != nil {
+		return SyncStateError, fmt.Errorf("failed to delete k8s objects: %w", err)
+	}
+	if found {
+		reqLogger.V(consts.LogLevelInfo).Info("State deleting objects in progress", "State:", s.name)
+		return SyncStateNotReady, nil
+	}
+	return SyncStateIgnore, nil
+}
+
+// nolint
+func (s *stateSkel) deleteStateRelatedObjects(ctx context.Context) (bool, error) {
+	stateLabel := map[string]string{
+		consts.StateLabel: s.name,
+	}
+	found := false
+	for _, gvk := range getSupportedGVKs() {
+		l := &unstructured.UnstructuredList{}
+		l.SetGroupVersionKind(gvk)
+		err := s.client.List(ctx, l, client.MatchingLabels(stateLabel))
+		if meta.IsNoMatchError(err) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		if len(l.Items) > 0 {
+			found = true
+		}
+		for _, obj := range l.Items {
+			obj := obj
+			if obj.GetDeletionTimestamp() == nil {
+				err := s.client.Delete(ctx, &obj)
+				if err != nil && !apierrors.IsNotFound(err) {
+					return true, err
+				}
+			}
+		}
+	}
+	return found, nil
 }
 
 func (s *stateSkel) mergeObjects(updated, current *unstructured.Unstructured) error {
