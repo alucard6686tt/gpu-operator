@@ -94,7 +94,10 @@ func (r *GPUClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		if condErr := r.conditionUpdater.SetConditionsError(ctx, instance, conditions.ReconcileFailed, msg); condErr != nil {
 			logger.Error(condErr, "failed to set condition")
 		}
-		return ctrl.Result{}, nil
+		// Requeue so the ClusterPolicy's deletion is noticed and the instance
+		// recovers; nothing watches ClusterPolicy here, mirroring the ready-path
+		// resync below.
+		return ctrl.Result{RequeueAfter: time.Minute}, nil
 	}
 
 	// Singleton, first-wins (mirroring ClusterPolicy): the first instance to reconcile
