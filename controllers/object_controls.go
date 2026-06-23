@@ -5160,13 +5160,39 @@ func transformRuntimeClass(n ClusterPolicyController, spec nodev1.RuntimeClass) 
 	return gpuv1.Ready, nil
 }
 
+func transformKataRuntimeClasses(n ClusterPolicyController) (gpuv1.State, error) {
+	ctx := n.ctx
+
+	// Get all existing Kata RuntimeClasses
+	opts := []client.ListOption{&client.MatchingLabels{"nvidia.com/kata-runtime-class": "true"}}
+	list := &nodev1.RuntimeClassList{}
+	err := n.client.List(ctx, list, opts...)
+	if err != nil {
+		n.logger.Info("Could not get Kata RuntimeClassList", err)
+		return gpuv1.NotReady, fmt.Errorf("error getting kata RuntimeClassList: %v", err)
+	}
+	n.logger.V(1).Info("Kata RuntimeClasses", "Number", len(list.Items))
+
+	// Enforce deletion of Kata RuntimeClasses because Kata manager is permanently switched off
+	// Delete all Kata RuntimeClasses
+	n.logger.Info("Kata Manager disabled, deleting all Kata RuntimeClasses")
+	for _, rc := range list.Items {
+		rc := rc
+		n.logger.V(1).Info("Deleting Kata RuntimeClass", "Name", rc.Name)
+		err := n.client.Delete(ctx, &rc)
+		if err != nil {
+			return gpuv1.NotReady, fmt.Errorf("error deleting kata RuntimeClass '%s': %v", rc.Name, err)
+		}
+	}
+	return gpuv1.Ready, nil
+}
+
 func RuntimeClasses(n ClusterPolicyController) (gpuv1.State, error) {
 	status := gpuv1.Ready
 	state := n.idx
 
 	if n.stateNames[state] == "state-kata-manager" {
-		// Kata Manager is deprecated, no need to process anything
-		return gpuv1.Ready, nil
+		return transformKataRuntimeClasses(n)
 	}
 
 	nvidiaRuntimeClasses := n.resources[state].RuntimeClasses
