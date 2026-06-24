@@ -42,9 +42,8 @@ func getDriverInfo(isHostDriver bool, hostRoot string, driverInstallDir string, 
 		}
 	}
 
-	// Containerized driver. Unlike nvidia-validator (which hardcodes "/driver-root"),
-	// the DRA stack mounts the containerized driver at the same path it occupies on
-	// the host (driverInstallDirCtrPath, e.g. /run/nvidia/driver), so we emit that.
+	// Containerized driver: it lives at driverInstallDir on the host and is mounted
+	// in-container at driverInstallDirCtrPath (e.g. /driver-root).
 	return driverInfo{
 		driverRoot:        driverInstallDir,
 		driverRootCtrPath: driverInstallDirCtrPath,

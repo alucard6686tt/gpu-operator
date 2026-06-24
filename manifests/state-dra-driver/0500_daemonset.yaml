@@ -48,12 +48,10 @@ spec:
       - name: {{ . }}
       {{- end }}
       {{- end }}
-      {{- if .KubeletPluginNodeSelector }}
-      nodeSelector: {{ .KubeletPluginNodeSelector | toJson }}
-      {{- end }}
-      {{- if .KubeletPluginAffinity }}
-      affinity: {{ .KubeletPluginAffinity | toJson }}
-      {{- else }}
+      # Gate scheduling on the deploy label so k8s-driver-manager can pause the
+      # kubelet-plugin to drain it off a node across a driver reload.
+      nodeSelector:
+        nvidia.com/gpu.deploy.dra-driver: "true"
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -73,7 +71,6 @@ spec:
                 operator: In
                 values:
                 - "true"
-      {{- end }}
       {{- if .KubeletPluginTolerations }}
       tolerations:
       {{- range .KubeletPluginTolerations }}
@@ -104,7 +101,7 @@ spec:
           mountPropagation: HostToContainer
           readOnly: true
         - name: driver-install-dir
-          mountPath: /run/nvidia/driver
+          mountPath: /driver-root
           mountPropagation: HostToContainer
         - name: validations
           mountPath: /run/nvidia/validations
@@ -207,7 +204,7 @@ spec:
           mountPropagation: HostToContainer
           readOnly: true
         - name: driver-install-dir
-          mountPath: /run/nvidia/driver
+          mountPath: /driver-root
           mountPropagation: HostToContainer
       {{- end }}
       {{- if .DRADriver.Spec.IsComputeDomainsEnabled }}
@@ -306,7 +303,7 @@ spec:
           mountPropagation: HostToContainer
           readOnly: true
         - name: driver-install-dir
-          mountPath: /run/nvidia/driver
+          mountPath: /driver-root
           mountPropagation: HostToContainer
       {{- end }}
       volumes:

@@ -393,31 +393,24 @@ func TestDRADriverControllerInheritsGlobalConfig(t *testing.T) {
 	assert.Contains(t, tolKeys(dep.Spec.Template.Spec.Tolerations), "nvidia.com/gpu")
 	assert.Contains(t, tolKeys(dep.Spec.Template.Spec.Tolerations), "node-role.kubernetes.io/control-plane")
 
-	// Global priorityClassName is used when no per-workload override is set.
+	// priorityClassName comes from the shared daemonsets spec.
 	assert.Equal(t, "global-priority", dep.Spec.Template.Spec.PriorityClassName)
-
-	// Per-workload controller.PriorityClassName overrides the global.
-	cr.Spec.DRADriver.ComputeDomains.Controller.PriorityClassName = "controller-priority"
-	objs2, err := s.getManifestObjects(context.Background(), cr, draSupportedCatalog())
-	require.NoError(t, err)
-	dep2 := findDeployment(t, objs2)
-	assert.Equal(t, "controller-priority", dep2.Spec.Template.Spec.PriorityClassName)
 }
 
-func TestDRADriverSchedulingMerge(t *testing.T) {
+func TestDRADriverKubeletPluginScheduling(t *testing.T) {
 	s := newTestDRAState(t)
 	cr := sampleGPUClusterConfig()
 	cr.Spec.DRADriver.ComputeDomains.Enabled = ptr.To(true)
-	cr.Spec.DRADriver.GPUs.KubeletPlugin.Tolerations = []corev1.Toleration{{Key: "gpu-tol", Operator: corev1.TolerationOpExists}}
-	cr.Spec.DRADriver.ComputeDomains.KubeletPlugin.Tolerations = []corev1.Toleration{{Key: "cd-tol", Operator: corev1.TolerationOpExists}}
-	cr.Spec.DRADriver.ComputeDomains.KubeletPlugin.PriorityClassName = "cd-priority"
+	cr.Spec.Daemonsets.Tolerations = []corev1.Toleration{{Key: "ds-tol", Operator: corev1.TolerationOpExists}}
+	cr.Spec.Daemonsets.PriorityClassName = "ds-priority"
 
 	objs, err := s.getManifestObjects(context.Background(), cr, draSupportedCatalog())
 	require.NoError(t, err)
 	ds := findDaemonSet(t, objs)
 
-	// union of daemonsets default + gpus + computeDomains tolerations
-	assert.Subset(t, tolKeys(ds.Spec.Template.Spec.Tolerations), []string{"nvidia.com/gpu", "gpu-tol", "cd-tol"})
-	// precedence computeDomains > gpus > daemonsets
-	assert.Equal(t, "cd-priority", ds.Spec.Template.Spec.PriorityClassName)
+	// priorityClassName and tolerations come from the shared daemonsets spec.
+	assert.Equal(t, "ds-priority", ds.Spec.Template.Spec.PriorityClassName)
+	assert.Subset(t, tolKeys(ds.Spec.Template.Spec.Tolerations), []string{"ds-tol"})
+	// The kubelet-plugin gates on the deploy label so k8s-driver-manager can evict it.
+	assert.Equal(t, "true", ds.Spec.Template.Spec.NodeSelector["nvidia.com/gpu.deploy.dra-driver"])
 }

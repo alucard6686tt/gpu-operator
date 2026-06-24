@@ -39,7 +39,7 @@ spec:
         {{- end }}
       {{- end }}
     spec:
-      priorityClassName: {{ $controller.PriorityClassName | default (.Daemonsets.PriorityClassName | default "system-node-critical") }}
+      priorityClassName: {{ .Daemonsets.PriorityClassName | default "system-node-critical" }}
       serviceAccountName: nvidia-dra-driver-controller
       {{- if .DRADriver.Spec.ImagePullSecrets }}
       imagePullSecrets:
@@ -47,12 +47,6 @@ spec:
       - name: {{ . }}
       {{- end }}
       {{- end }}
-      {{- if $controller.NodeSelector }}
-      nodeSelector: {{ $controller.NodeSelector | toJson }}
-      {{- end }}
-      {{- if $controller.Affinity }}
-      affinity: {{ $controller.Affinity | toJson }}
-      {{- else }}
       affinity:
         nodeAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -69,7 +63,6 @@ spec:
                   app: nvidia-dra-driver-controller
               topologyKey: kubernetes.io/hostname
             weight: 100
-      {{- end }}
       tolerations:
       - effect: NoSchedule
         key: node-role.kubernetes.io/control-plane
@@ -80,9 +73,6 @@ spec:
       - key: CriticalAddonsOnly
         operator: Exists
       {{- range .Daemonsets.Tolerations }}
-      - {{ . | toJson }}
-      {{- end }}
-      {{- range $controller.Tolerations }}
       - {{ . | toJson }}
       {{- end }}
       containers:

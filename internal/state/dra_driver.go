@@ -19,17 +19,14 @@ package state
 import (
 	"context"
 	"fmt"
-	"maps"
 	"sort"
 	"strings"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	nvidiav1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
 	nvidiav1alpha1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1alpha1"
 	"github.com/NVIDIA/gpu-operator/internal/consts"
 	"github.com/NVIDIA/gpu-operator/internal/image"
@@ -109,7 +106,12 @@ func (s *stateDRADriver) getManifestObjects(ctx context.Context, cr *nvidiav1alp
 
 	hostPaths := cr.Spec.HostPaths
 	daemonsets := cr.Spec.Daemonsets
-	priorityClassName, nodeSelector, tolerations, affinity := mergeKubeletPluginScheduling(&cr.Spec.DRADriver, &daemonsets)
+	// Scheduling is opinionated: the kubelet-plugin uses the template's default GPU-present
+	// affinity and takes priorityClassName/tolerations from the shared daemonsets spec.
+	priorityClassName := "system-node-critical"
+	if daemonsets.PriorityClassName != "" {
+		priorityClassName = daemonsets.PriorityClassName
+	}
 	renderData := &draDriverRenderData{
 		DRADriver:                      draDriverSpec,
 		HostPaths:                      &hostPaths,
@@ -118,9 +120,7 @@ func (s *stateDRADriver) getManifestObjects(ctx context.Context, cr *nvidiav1alp
 		DeviceClassAPIVersion:          apiVersion,
 		FeatureGates:                   renderDRAFeatureGates(cr.Spec.DRADriver.FeatureGates),
 		KubeletPluginPriorityClassName: priorityClassName,
-		KubeletPluginNodeSelector:      nodeSelector,
-		KubeletPluginTolerations:       tolerations,
-		KubeletPluginAffinity:          affinity,
+		KubeletPluginTolerations:       daemonsets.Tolerations,
 	}
 
 	return s.renderObjects(ctx, renderData)
@@ -145,60 +145,6 @@ func getDRADriverSpec(spec *nvidiav1alpha1.DRADriverSpec) (*draDriverSpec, error
 		ImagePath:     imagePath,
 		InitImagePath: initImagePath,
 	}, nil
-}
-
-// mergeKubeletPluginScheduling computes the pod-level scheduling for the single
-// kubelet-plugin DaemonSet, which hosts both the gpus and computeDomains containers.
-// Tolerations are the union of the daemonsets defaults and each enabled capability's
-// kubeletPlugin tolerations; priorityClassName and affinity use the precedence
-// computeDomains > gpus > daemonsets default (a disabled capability does not
-// contribute). A nil affinity lets the template fall back to the default GPU-present
-// node affinity.
-func mergeKubeletPluginScheduling(spec *nvidiav1alpha1.DRADriverSpec, daemonsets *nvidiav1.DaemonsetsSpec) (string, map[string]string, []corev1.Toleration, *corev1.Affinity) {
-	gpus := spec.GPUs.KubeletPlugin
-	cd := spec.ComputeDomains.KubeletPlugin
-	gpusEnabled := spec.IsGPUsEnabled()
-	cdEnabled := spec.IsComputeDomainsEnabled()
-
-	priorityClassName := "system-node-critical"
-	if daemonsets.PriorityClassName != "" {
-		priorityClassName = daemonsets.PriorityClassName
-	}
-	if gpusEnabled && gpus.PriorityClassName != "" {
-		priorityClassName = gpus.PriorityClassName
-	}
-	if cdEnabled && cd.PriorityClassName != "" {
-		priorityClassName = cd.PriorityClassName
-	}
-
-	tolerations := append([]corev1.Toleration{}, daemonsets.Tolerations...)
-	if gpusEnabled {
-		tolerations = append(tolerations, gpus.Tolerations...)
-	}
-	if cdEnabled {
-		tolerations = append(tolerations, cd.Tolerations...)
-	}
-
-	nodeSelector := map[string]string{}
-	if gpusEnabled {
-		maps.Copy(nodeSelector, gpus.NodeSelector)
-	}
-	if cdEnabled {
-		maps.Copy(nodeSelector, cd.NodeSelector)
-	}
-	if len(nodeSelector) == 0 {
-		nodeSelector = nil
-	}
-
-	var affinity *corev1.Affinity
-	if gpusEnabled && gpus.Affinity != nil {
-		affinity = gpus.Affinity
-	}
-	if cdEnabled && cd.Affinity != nil {
-		affinity = cd.Affinity
-	}
-
-	return priorityClassName, nodeSelector, tolerations, affinity
 }
 
 // renderDRAFeatureGates renders the feature-gate map as the FEATURE_GATES env value

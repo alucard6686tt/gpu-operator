@@ -51,11 +51,9 @@ const (
 	driverStatusFile = "driver-ready"
 	// hostRootCtrPath is where the host root filesystem is mounted in the container.
 	hostRootCtrPath = "/host"
-	// defaultDriverInstallDirCtrPath is where a containerized driver installation is
-	// mounted in the container. The DRA stack mounts it at the same path it occupies
-	// on the host, and the kubelet-plugin containers mount the same path and source
-	// DRIVER_ROOT_CTR_PATH from driver-ready.
-	defaultDriverInstallDirCtrPath = "/run/nvidia/driver"
+	// defaultDriverInstallDirCtrPath is where a containerized driver install is mounted in
+	// this container and the kubelet-plugin containers, matching the device-plugin convention.
+	defaultDriverInstallDirCtrPath = "/driver-root"
 	// hostNvidiaSMIPath is the expected location of nvidia-smi within the host root.
 	hostNvidiaSMIPath = "/usr/bin/nvidia-smi"
 	// defaultSleepIntervalSeconds is the retry interval between validation attempts.

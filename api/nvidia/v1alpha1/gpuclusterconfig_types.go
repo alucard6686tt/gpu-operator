@@ -17,7 +17,6 @@
 package v1alpha1
 
 import (
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	nvidiav1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
@@ -130,11 +129,9 @@ type DRADriverComputeDomainsSpec struct {
 	KubeletPlugin DRADriverKubeletPluginSpec `json:"kubeletPlugin,omitempty"`
 }
 
-// DRADriverKubeletPluginSpec defines configuration for a DRA driver kubelet-plugin container.
-// Per-component scheduling fields augment/override the shared daemonsets defaults for this
-// workload. The gpus and computeDomains kubelet-plugin blocks map onto the two containers of
-// a single kubelet-plugin DaemonSet, so the renderer reconciles pod-level scheduling when
-// both blocks set it.
+// DRADriverKubeletPluginSpec configures a DRA driver kubelet-plugin container. The gpus and
+// computeDomains blocks map onto the two containers of a single kubelet-plugin DaemonSet.
+// Scheduling is opinionated and not configurable here.
 type DRADriverKubeletPluginSpec struct {
 	// Optional: List of environment variables
 	Env []nvidiav1.EnvVar `json:"env,omitempty"`
@@ -145,41 +142,16 @@ type DRADriverKubeletPluginSpec struct {
 	// HealthcheckPort is the port running a gRPC health service checked by a livenessProbe.
 	// Set to a negative value to disable the service and the probe.
 	HealthcheckPort *int32 `json:"healthcheckPort,omitempty"`
-
-	// PriorityClassName for the kubelet-plugin DaemonSet pods
-	PriorityClassName string `json:"priorityClassName,omitempty"`
-
-	// NodeSelector for the kubelet-plugin DaemonSet pods
-	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
-
-	// Tolerations for the kubelet-plugin DaemonSet pods
-	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
-
-	// Affinity rules for the kubelet-plugin DaemonSet pods
-	Affinity *corev1.Affinity `json:"affinity,omitempty"`
 }
 
 // DRADriverControllerSpec defines configuration for the compute-domain controller Deployment.
-// As a Deployment (not a DaemonSet) it carries its own scheduling configuration rather than
-// inheriting the shared daemonsets defaults.
+// Scheduling is opinionated and not configurable here.
 type DRADriverControllerSpec struct {
 	// Optional: List of environment variables
 	Env []nvidiav1.EnvVar `json:"env,omitempty"`
 
 	// Optional: Define resources requests and limits for the controller container
 	Resources *nvidiav1.ResourceRequirements `json:"resources,omitempty"`
-
-	// PriorityClassName for the controller Deployment pods
-	PriorityClassName string `json:"priorityClassName,omitempty"`
-
-	// NodeSelector for the controller Deployment pods
-	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
-
-	// Tolerations for the controller Deployment pods
-	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
-
-	// Affinity rules for the controller Deployment pods
-	Affinity *corev1.Affinity `json:"affinity,omitempty"`
 }
 
 // GPUClusterConfigStatus defines the observed state of GPUClusterConfig

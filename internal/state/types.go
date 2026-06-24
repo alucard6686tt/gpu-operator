@@ -89,11 +89,8 @@ type draDriverRenderData struct {
 	DeviceClassAPIVersion string
 	// FeatureGates is the pre-rendered FEATURE_GATES env value (empty when none).
 	FeatureGates string
-	// The kubelet-plugin DaemonSet hosts both the gpus and computeDomains containers,
-	// so these pod-level scheduling fields are merged from the daemonsets defaults and
-	// the per-capability kubeletPlugin blocks (see mergeKubeletPluginScheduling).
+	// priorityClassName and tolerations for the kubelet-plugin DaemonSet, taken from the
+	// shared daemonsets spec.
 	KubeletPluginPriorityClassName string
-	KubeletPluginNodeSelector      map[string]string
 	KubeletPluginTolerations       []corev1.Toleration
-	KubeletPluginAffinity          *corev1.Affinity
 }

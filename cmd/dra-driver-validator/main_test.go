@@ -38,9 +38,9 @@ func TestWriteDriverReady(t *testing.T) {
 		},
 		{
 			description: "containerized driver",
-			info:        getDriverInfo(false, "/", "/run/nvidia/driver", "/run/nvidia/driver"),
+			info:        getDriverInfo(false, "/", "/run/nvidia/driver", "/driver-root"),
 			expected: "NVIDIA_DRIVER_ROOT=/run/nvidia/driver\n" +
-				"DRIVER_ROOT_CTR_PATH=/run/nvidia/driver\n",
+				"DRIVER_ROOT_CTR_PATH=/driver-root\n",
 		},
 	}
 
@@ -65,12 +65,11 @@ func TestGetDriverInfo(t *testing.T) {
 	})
 
 	t.Run("containerized driver", func(t *testing.T) {
-		// Containerized driver: emitted in-container path is the configured ctr path
-		// (the DRA stack mounts the driver at the same path on host and in-container),
-		// not nvidia-validator's fixed /driver-root.
-		info := getDriverInfo(false, "/", "/run/nvidia/driver", "/run/nvidia/driver")
+		// Containerized driver: driverRoot is the host install path, driverRootCtrPath the
+		// configured in-container mount (/driver-root).
+		info := getDriverInfo(false, "/", "/run/nvidia/driver", "/driver-root")
 		require.Equal(t, "/run/nvidia/driver", info.driverRoot)
-		require.Equal(t, "/run/nvidia/driver", info.driverRootCtrPath)
+		require.Equal(t, "/driver-root", info.driverRootCtrPath)
 	})
 }
 
