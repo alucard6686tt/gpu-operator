@@ -5181,7 +5181,8 @@ func transformKataRuntimeClasses(n ClusterPolicyController) (gpuv1.State, error)
 		n.logger.V(1).Info("Deleting Kata RuntimeClass", "Name", rc.Name)
 		err := n.client.Delete(ctx, &rc)
 		if err != nil {
-			return gpuv1.NotReady, fmt.Errorf("error deleting kata RuntimeClass '%s': %v", rc.Name, err)
+			n.logger.V(1).Info("Error deleting Kata RuntimeClass", "Name", rc.Name, "Error", err.Error())
+			// continue nevertheless, do not block
 		}
 	}
 	return gpuv1.Ready, nil
