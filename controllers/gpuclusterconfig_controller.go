@@ -34,7 +34,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	gpuv1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
 	nvidiav1alpha1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1alpha1"
 	"github.com/NVIDIA/gpu-operator/controllers/clusterinfo"
 	"github.com/NVIDIA/gpu-operator/internal/conditions"
@@ -82,11 +81,11 @@ func (r *GPUClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	// GPUClusterConfig (DRA path) is mutually exclusive with ClusterPolicy: if one
 	// exists, yield to it rather than deploying the DRA stack alongside it.
-	clusterPolicies := &gpuv1.ClusterPolicyList{}
-	if err := r.List(ctx, clusterPolicies); err != nil {
-		return ctrl.Result{}, fmt.Errorf("error listing ClusterPolicies: %w", err)
+	clusterPolicy, _, err := resolveActiveConfig(ctx, r.Client)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
-	if len(clusterPolicies.Items) > 0 {
+	if clusterPolicy != nil {
 		logger.V(consts.LogLevelWarning).Info("ClusterPolicy present, skipping mutually exclusive GPUClusterConfig")
 		if err := r.updateCrStatus(ctx, instance, nvidiav1alpha1.Disabled); err != nil {
 			return ctrl.Result{}, err

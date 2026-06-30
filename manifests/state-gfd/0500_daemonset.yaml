@@ -42,6 +42,10 @@ spec:
     spec:
       priorityClassName: system-node-critical
       serviceAccountName: nvidia-gpu-feature-discovery
+      # Gate scheduling on the per-component deploy label so the k8s-driver-manager
+      # can pause it to drain GFD off a node during a driver reload.
+      nodeSelector:
+        nvidia.com/gpu.deploy.gpu-feature-discovery: "true"
       {{- if .GFD.Spec.ImagePullSecrets }}
       imagePullSecrets:
       {{- range .GFD.Spec.ImagePullSecrets }}

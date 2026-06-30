@@ -53,12 +53,15 @@ type NodeLabelingReconciler struct {
 }
 
 // nodeLabelingController holds per-reconcile state so that helper methods don't need to
-// re-receive that state as arguments.
+// re-receive that state as arguments. Exactly one of clusterPolicy or gpuClusterConfig is
+// set, selecting the ClusterPolicy stack (the default) or the DRA-based GPUClusterConfig
+// stack; the two CRs are mutually exclusive.
 type nodeLabelingController struct {
-	client        client.Client
-	namespace     string
-	clusterPolicy *gpuv1.ClusterPolicy
-	logger        logr.Logger
+	client           client.Client
+	namespace        string
+	clusterPolicy    *gpuv1.ClusterPolicy
+	gpuClusterConfig *nvidiav1alpha1.GPUClusterConfig
+	logger           logr.Logger
 }
 
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;update;patch
@@ -67,34 +70,34 @@ type nodeLabelingController struct {
 func (r *NodeLabelingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Log.Info("Reconciling node labels")
 
-	clusterPolicyList := &gpuv1.ClusterPolicyList{}
-	if err := r.List(ctx, clusterPolicyList); err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to list ClusterPolicy: %w", err)
+	// Default to the ClusterPolicy stack; fall back to the GPUClusterConfig (DRA) stack when
+	// no ClusterPolicy exists. Neither existing means there is nothing to label.
+	clusterPolicy, gpuClusterConfig, err := resolveActiveConfig(ctx, r.Client)
+	if err != nil {
+		return reconcile.Result{}, err
 	}
-
-	// (cdesiniotis) Return early if a ClusterPolicy CR does not exist.
-	// This means that nodes will not get labeled unless a ClusterPolicy
-	// CR has been created. This may be relaxed in the future when the
-	// NVIDIA DRA Driver for GPUs is integrated with the GPU Operator
-	// and new CRDs are introduced.
-	if len(clusterPolicyList.Items) == 0 {
-		r.Log.Info("No ClusterPolicy CR exists, skipping node labeling")
+	if clusterPolicy == nil && gpuClusterConfig == nil {
+		r.Log.Info("No ClusterPolicy or GPUClusterConfig CR exists, skipping node labeling")
 		return reconcile.Result{}, nil
 	}
-	clusterPolicy := &clusterPolicyList.Items[0]
 
 	nlc := &nodeLabelingController{
-		client:        r.Client,
-		namespace:     r.Namespace,
-		clusterPolicy: clusterPolicy,
-		logger:        r.Log,
+		client:           r.Client,
+		namespace:        r.Namespace,
+		clusterPolicy:    clusterPolicy,
+		gpuClusterConfig: gpuClusterConfig,
+		logger:           r.Log,
 	}
 
 	if err := nlc.labelGPUNodes(ctx); err != nil {
 		return reconcile.Result{}, err
 	}
 
-	if nlc.clusterPolicy.Spec.Driver.UseNvidiaDriverCRDType() {
+	// Route each GPU node to its NVIDIADriver CR. Skipping this leaves the NVIDIADriver controller owning no nodes, and it
+	// then removes the driver DaemonSet.
+	usesNvidiaDriverCRD := nlc.gpuClusterConfig != nil ||
+		(nlc.clusterPolicy != nil && nlc.clusterPolicy.Spec.Driver.UseNvidiaDriverCRDType())
+	if usesNvidiaDriverCRD {
 		if _, err := nvidiadriverutil.AssignOwners(ctx, r.Client); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to assign NVIDIADriver owners to nodes: %w", err)
 		}
@@ -103,8 +106,11 @@ func (r *NodeLabelingReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	if err := nlc.applyDriverAutoUpgradeAnnotation(ctx); err != nil {
-		return reconcile.Result{}, err
+	// The driver auto-upgrade annotation is derived from ClusterPolicy spec.
+	if nlc.clusterPolicy != nil {
+		if err := nlc.applyDriverAutoUpgradeAnnotation(ctx); err != nil {
+			return reconcile.Result{}, err
+		}
 	}
 
 	return reconcile.Result{}, nil
@@ -160,6 +166,10 @@ func (nlc *nodeLabelingController) reconcileCommonGPULabel(labels map[string]str
 // appropriate. If the node does not have the common GPU label, all state labels are removed.
 // Returns true if labels were modified.
 func (nlc *nodeLabelingController) updateGPUStateLabels(labels map[string]string, nodeName string) bool {
+	if nlc.gpuClusterConfig != nil {
+		return updateGPUClusterConfigStateLabels(labels)
+	}
+
 	if !hasCommonGPULabel(labels) {
 		return removeAllGPUStateLabels(labels)
 	}
@@ -194,6 +204,31 @@ func (nlc *nodeLabelingController) updateGPUStateLabels(labels map[string]string
 			nlc.logger.Info("Setting MIG config label", "NodeName", nodeName,
 				"Label", migConfigLabelKey, "Value", migConfigDisabledValue)
 			labels[migConfigLabelKey] = migConfigDisabledValue
+			modified = true
+		}
+	}
+	return modified
+}
+
+// updateGPUClusterConfigStateLabels is the GPUClusterConfig analogue of the ClusterPolicy
+// gpuWorkloadConfiguration state-label logic: it sets the DRA operand deploy labels on a GPU
+// node and removes them once the GPUs are gone. Like the ClusterPolicy path it honors an
+// existing value (set only when absent) so the k8s-driver-manager can pause an operand by
+// flipping its label to drain it off a node during a driver reload. Returns true if modified.
+func updateGPUClusterConfigStateLabels(labels map[string]string) bool {
+	modified := false
+	if !hasCommonGPULabel(labels) {
+		for key := range gpuClusterConfigStateLabels {
+			if _, ok := labels[key]; ok {
+				delete(labels, key)
+				modified = true
+			}
+		}
+		return modified
+	}
+	for key, value := range gpuClusterConfigStateLabels {
+		if _, ok := labels[key]; !ok {
+			labels[key] = value
 			modified = true
 		}
 	}
@@ -381,6 +416,20 @@ func (r *NodeLabelingReconciler) SetupWithManager(ctx context.Context, mgr ctrl.
 		predicate.TypedGenerationChangedPredicate[*gpuv1.ClusterPolicy]{},
 	)); err != nil {
 		return fmt.Errorf("error watching ClusterPolicy: %w", err)
+	}
+
+	// Watch GPUClusterConfig so GPU nodes are (re)labeled for the DRA stack as the CR is
+	// created or removed, mirroring the ClusterPolicy watch above.
+	gpuClusterConfigMapFn := func(ctx context.Context, gcc *nvidiav1alpha1.GPUClusterConfig) []reconcile.Request {
+		return mapToSingleton(ctx, gcc)
+	}
+	if err := c.Watch(source.Kind(
+		mgr.GetCache(),
+		&nvidiav1alpha1.GPUClusterConfig{},
+		handler.TypedEnqueueRequestsFromMapFunc(gpuClusterConfigMapFn),
+		predicate.TypedGenerationChangedPredicate[*nvidiav1alpha1.GPUClusterConfig]{},
+	)); err != nil {
+		return fmt.Errorf("error watching GPUClusterConfig: %w", err)
 	}
 
 	// Watch NVIDIADriver including delete events so owner labels are cleaned up promptly.
