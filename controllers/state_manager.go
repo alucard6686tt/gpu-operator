@@ -73,11 +73,19 @@ const (
 	gpuWorkloadConfigVMVgpu            = "vm-vgpu"
 	kubevirtDevicePluginDeployLabelKey = "nvidia.com/gpu.deploy.sandbox-device-plugin"
 	kataDevicePluginDeployLabelKey     = "nvidia.com/gpu.deploy.kata-sandbox-device-plugin"
-	podSecurityLabelPrefix             = "pod-security.kubernetes.io/"
-	podSecurityLevelPrivileged         = "privileged"
-	driverAutoUpgradeAnnotationKey     = "nvidia.com/gpu-driver-upgrade-enabled"
-	commonDriverDaemonsetName          = "nvidia-driver-daemonset"
-	commonVGPUManagerDaemonsetName     = "nvidia-vgpu-manager-daemonset"
+	// Deploy labels shared by the ClusterPolicy gpuStateLabels map and the GPUCluster
+	// (DRA) node-labeling path, so each key string has a single definition.
+	driverDeployLabelKey           = "nvidia.com/gpu.deploy.driver"
+	draDriverDeployLabelKey        = "nvidia.com/gpu.deploy.dra-driver"
+	draValidatorDeployLabelKey     = "nvidia.com/gpu.deploy.dra-validator"
+	gfdDeployLabelKey              = "nvidia.com/gpu.deploy.gpu-feature-discovery"
+	dcgmDeployLabelKey             = "nvidia.com/gpu.deploy.dcgm"
+	dcgmExporterDeployLabelKey     = "nvidia.com/gpu.deploy.dcgm-exporter"
+	podSecurityLabelPrefix         = "pod-security.kubernetes.io/"
+	podSecurityLevelPrivileged     = "privileged"
+	driverAutoUpgradeAnnotationKey = "nvidia.com/gpu-driver-upgrade-enabled"
+	commonDriverDaemonsetName      = "nvidia-driver-daemonset"
+	commonVGPUManagerDaemonsetName = "nvidia-vgpu-manager-daemonset"
 )
 
 var (
@@ -87,14 +95,14 @@ var (
 
 var gpuStateLabels = map[string]map[string]string{
 	gpuWorkloadConfigContainer: {
-		"nvidia.com/gpu.deploy.driver":                "true",
-		"nvidia.com/gpu.deploy.gpu-feature-discovery": "true",
-		"nvidia.com/gpu.deploy.container-toolkit":     "true",
-		"nvidia.com/gpu.deploy.device-plugin":         "true",
-		"nvidia.com/gpu.deploy.dcgm":                  "true",
-		"nvidia.com/gpu.deploy.dcgm-exporter":         "true",
-		"nvidia.com/gpu.deploy.node-status-exporter":  "true",
-		"nvidia.com/gpu.deploy.operator-validator":    "true",
+		driverDeployLabelKey:                         "true",
+		gfdDeployLabelKey:                            "true",
+		"nvidia.com/gpu.deploy.container-toolkit":    "true",
+		"nvidia.com/gpu.deploy.device-plugin":        "true",
+		dcgmDeployLabelKey:                           "true",
+		dcgmExporterDeployLabelKey:                   "true",
+		"nvidia.com/gpu.deploy.node-status-exporter": "true",
+		"nvidia.com/gpu.deploy.operator-validator":   "true",
 	},
 	gpuWorkloadConfigVMPassthrough: {
 		"nvidia.com/gpu.deploy.sandbox-device-plugin": "true",
@@ -110,6 +118,18 @@ var gpuStateLabels = map[string]map[string]string{
 		"nvidia.com/gpu.deploy.sandbox-validator":     "true",
 		"nvidia.com/gpu.deploy.cc-manager":            "true",
 	},
+}
+
+// gpuClusterStateLabels are the nvidia.com/gpu.deploy.* labels the DRA-based
+// GPUCluster operands gate their nodeSelectors on, analogous to gpuStateLabels for
+// the ClusterPolicy stack.
+var gpuClusterStateLabels = map[string]string{
+	driverDeployLabelKey:       "true",
+	draDriverDeployLabelKey:    "true",
+	draValidatorDeployLabelKey: "true",
+	gfdDeployLabelKey:          "true",
+	dcgmDeployLabelKey:         "true",
+	dcgmExporterDeployLabelKey: "true",
 }
 
 var gpuNodeLabels = map[string]string{

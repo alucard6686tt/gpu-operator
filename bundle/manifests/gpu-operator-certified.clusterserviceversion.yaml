@@ -339,6 +339,37 @@ spec:
           path: state
           x-descriptors:
             - 'urn:alm:descriptor:text'
+    - name: gpuclusters.nvidia.com
+      kind: GPUCluster
+      version: v1alpha1
+      group: nvidia.com
+      displayName: GPUCluster
+      description: GPUCluster allows you to configure the DRA-based GPU software stack
+      resources:
+        - kind: ServiceAccount
+          name: ''
+          version: v1
+        - kind: DaemonSet
+          name: ''
+          version: apps/v1
+        - kind: Deployment
+          name: ''
+          version: apps/v1
+        - kind: ConfigMap
+          name: ''
+          version: v1
+        - kind: Pod
+          name: ''
+          version: v1
+        - kind: status
+          name: ''
+          version: v1
+      statusDescriptors:
+        - description: The current state of the GPUCluster.
+          displayName: State
+          path: state
+          x-descriptors:
+            - 'urn:alm:descriptor:text'
     - name: clusterpolicies.nvidia.com
       kind: ClusterPolicy
       version: v1
@@ -654,6 +685,9 @@ spec:
           - clusterpolicies
           - clusterpolicies/finalizers
           - clusterpolicies/status
+          - gpuclusters
+          - gpuclusters/finalizers
+          - gpuclusters/status
           - nvidiadrivers
           - nvidiadrivers/finalizers
           - nvidiadrivers/status
