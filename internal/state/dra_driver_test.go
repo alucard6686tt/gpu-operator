@@ -413,4 +413,6 @@ func TestDRADriverKubeletPluginScheduling(t *testing.T) {
 	assert.Subset(t, tolKeys(ds.Spec.Template.Spec.Tolerations), []string{"ds-tol"})
 	// The kubelet-plugin gates on the deploy label so k8s-driver-manager can evict it.
 	assert.Equal(t, "true", ds.Spec.Template.Spec.NodeSelector["nvidia.com/gpu.deploy.dra-driver"])
+	// The mode gate keeps the DRA driver off device-plugin nodes.
+	assert.Equal(t, "dra", ds.Spec.Template.Spec.NodeSelector["nvidia.com/gpu-operator.mode"])
 }

@@ -70,6 +70,21 @@ const (
 	// NVIDIADriverOwnerLabel is an operator-managed node label used to route each GPU node to one NVIDIADriver.
 	NVIDIADriverOwnerLabel = "nvidia.com/gpu-operator.driver.owner"
 
+	// GPUOperatorModeLabelKey is a node label selecting which stack serves the node's GPUs:
+	// the device plugin (ClusterPolicy) or the DRA driver (GPUCluster). Every operand
+	// DaemonSet carries it as a nodeSelector entry alongside its gpu.deploy.<operand>
+	// selector, so a node only ever runs operands of the stack it is labeled for. The
+	// node-labeling controller writes it once per GPU node and never overwrites an
+	// existing value.
+	GPUOperatorModeLabelKey = "nvidia.com/gpu-operator.mode"
+	// GPUOperatorModeDevicePlugin selects the device-plugin (ClusterPolicy) stack for a node.
+	GPUOperatorModeDevicePlugin = "device-plugin"
+	// GPUOperatorModeDRA selects the DRA (GPUCluster) stack for a node.
+	GPUOperatorModeDRA = "dra"
+	// PreferredModeEnvName is the operator environment variable holding the mode applied to
+	// unlabeled GPU nodes when both a ClusterPolicy and a GPUCluster exist.
+	PreferredModeEnvName = "PREFERRED_MODE"
+
 	// MinimumGDSVersionForOpenRM indicates the minimum GDS version that is supported only with OpenRM driver
 	MinimumGDSVersionForOpenRM = "v2.17.5"
 )

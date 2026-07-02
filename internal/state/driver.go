@@ -97,6 +97,7 @@ type driverRenderData struct {
 	Openshift         *openshiftSpec
 	Precompiled       *precompiledSpec
 	AdditionalConfigs *additionalConfigs
+	ModeSelectorValue string
 	HostRoot          string
 }
 
@@ -277,10 +278,16 @@ func (s *stateDriver) getManifestObjects(ctx context.Context, cr *nvidiav1alpha1
 
 	gpuDirectRDMASpec := cr.Spec.GPUDirectRDMA
 
+	modeSelectorValue, err := nvidiaDriverModeSelectorValue(ctx, s.client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve mode nodeSelector value for driver DaemonSets: %w", err)
+	}
+
 	renderData := &driverRenderData{
-		GPUDirectRDMA: gpuDirectRDMASpec,
-		Runtime:       runtimeSpec,
-		HostRoot:      clusterPolicy.Spec.HostPaths.RootFS,
+		GPUDirectRDMA:     gpuDirectRDMASpec,
+		Runtime:           runtimeSpec,
+		ModeSelectorValue: modeSelectorValue,
+		HostRoot:          clusterPolicy.Spec.HostPaths.RootFS,
 	}
 
 	if len(nodePools) == 0 {
@@ -567,6 +574,35 @@ func sanitizeDriverLabels(labels map[string]string) map[string]string {
 		sanitizedLabels[k] = v
 	}
 	return sanitizedLabels
+}
+
+// nvidiaDriverModeSelectorValue returns the nvidia.com/gpu-operator.mode nodeSelector
+// value for NVIDIADriver-rendered DaemonSets. NVIDIADriver CRs drive the device-plugin
+// plane when a ClusterPolicy delegates its driver to them (driver.useNvidiaDriverCRD) and
+// the DRA plane when a GPUCluster exists. When neither applies (standalone use) or
+// both do (a single driver shared by both planes), no mode gate is rendered.
+func nvidiaDriverModeSelectorValue(ctx context.Context, c client.Client) (string, error) {
+	clusterPolicies := &gpuv1.ClusterPolicyList{}
+	if err := c.List(ctx, clusterPolicies); err != nil {
+		return "", fmt.Errorf("failed to list ClusterPolicy: %w", err)
+	}
+	clusterPolicyUsesNVD := len(clusterPolicies.Items) > 0 &&
+		clusterPolicies.Items[0].Spec.Driver.UseNvidiaDriverCRDType()
+
+	gpuClusters := &nvidiav1alpha1.GPUClusterList{}
+	if err := c.List(ctx, gpuClusters); err != nil {
+		return "", fmt.Errorf("failed to list GPUCluster: %w", err)
+	}
+	gpuClusterExists := len(gpuClusters.Items) > 0
+
+	switch {
+	case clusterPolicyUsesNVD && !gpuClusterExists:
+		return consts.GPUOperatorModeDevicePlugin, nil
+	case gpuClusterExists && !clusterPolicyUsesNVD:
+		return consts.GPUOperatorModeDRA, nil
+	default:
+		return "", nil
+	}
 }
 
 func getDriverSpec(cr *nvidiav1alpha1.NVIDIADriver, nodePool nodePool) (*driverSpec, error) {

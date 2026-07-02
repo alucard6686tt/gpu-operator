@@ -21,6 +21,7 @@ spec:
       terminationGracePeriodSeconds: 120
       nodeSelector:
         nvidia.com/gpu.deploy.vgpu-manager: "true"
+        nvidia.com/gpu-operator.mode: "device-plugin"
       tolerations:
         - key: nvidia.com/gpu
           operator: Exists

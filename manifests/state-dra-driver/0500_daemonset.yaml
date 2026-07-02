@@ -52,6 +52,7 @@ spec:
       # kubelet-plugin to drain it off a node across a driver reload.
       nodeSelector:
         nvidia.com/gpu.deploy.dra-driver: "true"
+        nvidia.com/gpu-operator.mode: "dra"
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:

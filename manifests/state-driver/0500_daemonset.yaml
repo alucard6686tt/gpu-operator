@@ -74,6 +74,9 @@ spec:
         {{- else }}
         nvidia.com/gpu.deploy.driver: "true"
         {{- end }}
+        {{- if .ModeSelectorValue }}
+        nvidia.com/gpu-operator.mode: "{{ .ModeSelectorValue }}"
+        {{- end }}
         {{- if .Driver.Spec.NodeSelector }}
         {{- .Driver.Spec.NodeSelector | yaml | nindent 8 }}
         {{- end }}

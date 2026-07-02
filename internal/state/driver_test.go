@@ -36,8 +36,10 @@ import (
 	apitypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	gpuv1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
 	nvidiav1alpha1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1alpha1"
 	"github.com/NVIDIA/gpu-operator/internal/consts"
 	"github.com/NVIDIA/gpu-operator/internal/render"
@@ -1182,4 +1184,41 @@ func TestGetDriverSpecMultipleNodePools(t *testing.T) {
 	spec1.Spec.NodeSelector["test-key"] = "test-value"
 	_, exists := spec2.Spec.NodeSelector["test-key"]
 	assert.False(t, exists)
+}
+
+func TestNVIDIADriverModeSelectorValue(t *testing.T) {
+	require.NoError(t, gpuv1.AddToScheme(scheme.Scheme))
+	require.NoError(t, nvidiav1alpha1.AddToScheme(scheme.Scheme))
+
+	clusterPolicy := func(useNVDDriver bool) *gpuv1.ClusterPolicy {
+		return &gpuv1.ClusterPolicy{
+			ObjectMeta: metav1.ObjectMeta{Name: "cluster-policy"},
+			Spec: gpuv1.ClusterPolicySpec{
+				Driver: gpuv1.DriverSpec{UseNvidiaDriverCRD: ptr.To(useNVDDriver)},
+			},
+		}
+	}
+	gpuCluster := &nvidiav1alpha1.GPUCluster{ObjectMeta: metav1.ObjectMeta{Name: "config"}}
+
+	testCases := []struct {
+		description string
+		objs        []client.Object
+		expected    string
+	}{
+		{"GPUCluster only", []client.Object{gpuCluster}, "dra"},
+		{"GPUCluster with classic ClusterPolicy driver", []client.Object{gpuCluster, clusterPolicy(false)}, "dra"},
+		{"ClusterPolicy delegating its driver to NVIDIADriver", []client.Object{clusterPolicy(true)}, "device-plugin"},
+		{"NVIDIADriver shared by both planes gets no gate", []client.Object{gpuCluster, clusterPolicy(true)}, ""},
+		{"standalone NVIDIADriver gets no gate", nil, ""},
+		{"classic ClusterPolicy driver only gets no gate", []client.Object{clusterPolicy(false)}, ""},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.description, func(t *testing.T) {
+			c := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(tc.objs...).Build()
+			value, err := nvidiaDriverModeSelectorValue(context.Background(), c)
+			require.NoError(t, err)
+			assert.Equal(t, tc.expected, value)
+		})
+	}
 }

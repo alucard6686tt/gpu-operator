@@ -24,28 +24,49 @@ import (
 
 	gpuv1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
 	nvidiav1alpha1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1alpha1"
+	"github.com/NVIDIA/gpu-operator/internal/consts"
 )
 
-// resolveActiveConfig determines which cluster-wide configuration drives the operands: a
-// ClusterPolicy takes precedence, otherwise the DRA-based GPUCluster. The two CRs are
-// mutually exclusive, so at most one of the returned values is non-nil; both nil means
-// neither CR exists.
 func resolveActiveConfig(ctx context.Context, c client.Client) (*gpuv1.ClusterPolicy, *nvidiav1alpha1.GPUCluster, error) {
+	var clusterPolicy *gpuv1.ClusterPolicy
 	clusterPolicies := &gpuv1.ClusterPolicyList{}
 	if err := c.List(ctx, clusterPolicies); err != nil {
 		return nil, nil, fmt.Errorf("failed to list ClusterPolicy: %w", err)
 	}
 	if len(clusterPolicies.Items) > 0 {
-		return &clusterPolicies.Items[0], nil, nil
+		clusterPolicy = &clusterPolicies.Items[0]
 	}
 
+	var gpuCluster *nvidiav1alpha1.GPUCluster
 	gpuClusters := &nvidiav1alpha1.GPUClusterList{}
 	if err := c.List(ctx, gpuClusters); err != nil {
 		return nil, nil, fmt.Errorf("failed to list GPUCluster: %w", err)
 	}
 	if len(gpuClusters.Items) > 0 {
-		return nil, &gpuClusters.Items[0], nil
+		gpuCluster = &gpuClusters.Items[0]
 	}
 
-	return nil, nil, nil
+	return clusterPolicy, gpuCluster, nil
+}
+
+// resolveDefaultMode returns the nvidia.com/gpu-operator.mode value for a GPU node that
+// does not have one yet. When exactly one configuration CR exists its plane wins;
+// preferredMode (the PREFERRED_MODE operator environment variable) is consulted only when
+// both CRs exist, defaulting to device-plugin when unset or invalid. Nodes already
+// labeled are never touched, so changing PREFERRED_MODE only affects nodes labeled
+// afterward.
+func resolveDefaultMode(clusterPolicyExists, gpuClusterExists bool, preferredMode string) string {
+	switch {
+	case clusterPolicyExists && gpuClusterExists:
+		if preferredMode == consts.GPUOperatorModeDRA {
+			return consts.GPUOperatorModeDRA
+		}
+		return consts.GPUOperatorModeDevicePlugin
+	case gpuClusterExists:
+		return consts.GPUOperatorModeDRA
+	case clusterPolicyExists:
+		return consts.GPUOperatorModeDevicePlugin
+	default:
+		return ""
+	}
 }

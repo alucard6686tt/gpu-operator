@@ -81,6 +81,7 @@ const (
 	gfdDeployLabelKey              = "nvidia.com/gpu.deploy.gpu-feature-discovery"
 	dcgmDeployLabelKey             = "nvidia.com/gpu.deploy.dcgm"
 	dcgmExporterDeployLabelKey     = "nvidia.com/gpu.deploy.dcgm-exporter"
+	vgpuManagerDeployLabelKey      = "nvidia.com/gpu.deploy.vgpu-manager"
 	podSecurityLabelPrefix         = "pod-security.kubernetes.io/"
 	podSecurityLevelPrivileged     = "privileged"
 	driverAutoUpgradeAnnotationKey = "nvidia.com/gpu-driver-upgrade-enabled"
@@ -113,7 +114,7 @@ var gpuStateLabels = map[string]map[string]string{
 	},
 	gpuWorkloadConfigVMVgpu: {
 		"nvidia.com/gpu.deploy.sandbox-device-plugin": "true",
-		"nvidia.com/gpu.deploy.vgpu-manager":          "true",
+		vgpuManagerDeployLabelKey:                     "true",
 		"nvidia.com/gpu.deploy.vgpu-device-manager":   "true",
 		"nvidia.com/gpu.deploy.sandbox-validator":     "true",
 		"nvidia.com/gpu.deploy.cc-manager":            "true",
@@ -130,6 +131,37 @@ var gpuClusterStateLabels = map[string]string{
 	gfdDeployLabelKey:          "true",
 	dcgmDeployLabelKey:         "true",
 	dcgmExporterDeployLabelKey: "true",
+}
+
+// clusterPolicyStateLabelKeys returns every deploy-label key the ClusterPolicy
+// (device-plugin) plane may set on a node via the workload-config maps. The sandbox
+// device-plugin keys are added explicitly (and the result computed per call) because
+// getEffectiveStateLabels mutates the vm-passthrough map in place. mig-manager is
+// excluded: removeGPUStateLabels must not delete it for the container config.
+func clusterPolicyStateLabelKeys() map[string]bool {
+	keys := make(map[string]bool)
+	for _, labelsMap := range gpuStateLabels {
+		for key := range labelsMap {
+			keys[key] = true
+		}
+	}
+	keys[kubevirtDevicePluginDeployLabelKey] = true
+	keys[kataDevicePluginDeployLabelKey] = true
+	return keys
+}
+
+// devicePluginOnlyStateLabelKeys returns the deploy-label keys the mode sweep deletes
+// from a DRA node: the ClusterPolicy plane's keys minus those the GPUCluster plane
+// shares, and minus vgpu-manager, which (like gpu.deploy.driver) gates an
+// NVIDIADriver-rendered DaemonSet that may serve either plane.
+func devicePluginOnlyStateLabelKeys() map[string]bool {
+	keys := clusterPolicyStateLabelKeys()
+	keys[migManagerLabelKey] = true
+	for key := range gpuClusterStateLabels {
+		delete(keys, key)
+	}
+	delete(keys, vgpuManagerDeployLabelKey)
+	return keys
 }
 
 var gpuNodeLabels = map[string]string{
@@ -400,6 +432,12 @@ func removeAllGPUStateLabels(labels map[string]string) bool {
 			}
 		}
 	}
+	for key := range gpuClusterStateLabels {
+		if _, ok := labels[key]; ok {
+			delete(labels, key)
+			modified = true
+		}
+	}
 	if _, ok := labels[kataDevicePluginDeployLabelKey]; ok {
 		delete(labels, kataDevicePluginDeployLabelKey)
 		modified = true
@@ -451,14 +489,12 @@ func (w *gpuWorkloadConfiguration) addGPUStateLabels(labels map[string]string) b
 func (w *gpuWorkloadConfiguration) removeGPUStateLabels(labels map[string]string) bool {
 	modified := false
 	effective := getEffectiveStateLabels(w.config, w.sandboxMode)
-	// Collect all keys that are ever used as state labels (from static map + mode-dependent key)
-	allStateKeys := make(map[string]bool)
-	for _, labelsMap := range gpuStateLabels {
-		for key := range labelsMap {
-			allStateKeys[key] = true
-		}
+	// All keys ever used as state labels, including the DRA plane's: keys not in the
+	// effective set are deleted, which also sweeps DRA leftovers off device-plugin nodes.
+	allStateKeys := clusterPolicyStateLabelKeys()
+	for key := range gpuClusterStateLabels {
+		allStateKeys[key] = true
 	}
-	allStateKeys[kataDevicePluginDeployLabelKey] = true
 	for key := range labels {
 		if !allStateKeys[key] {
 			continue

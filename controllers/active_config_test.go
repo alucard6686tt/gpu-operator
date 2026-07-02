@@ -41,9 +41,21 @@ func TestResolveActiveConfig(t *testing.T) {
 	clusterPolicy := &gpuv1.ClusterPolicy{ObjectMeta: metav1.ObjectMeta{Name: "cluster-policy"}}
 	gpuCluster := &nvidiav1alpha1.GPUCluster{ObjectMeta: metav1.ObjectMeta{Name: "cluster-config"}}
 
-	t.Run("ClusterPolicy present takes precedence over GPUCluster", func(t *testing.T) {
+	t.Run("both CRs present are both returned", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).
 			WithObjects(clusterPolicy, gpuCluster).Build()
+
+		cp, gc, err := resolveActiveConfig(context.Background(), c)
+		require.NoError(t, err)
+		require.NotNil(t, cp)
+		assert.Equal(t, "cluster-policy", cp.Name)
+		require.NotNil(t, gc)
+		assert.Equal(t, "cluster-config", gc.Name)
+	})
+
+	t.Run("no GPUCluster returns only ClusterPolicy", func(t *testing.T) {
+		c := fake.NewClientBuilder().WithScheme(scheme).
+			WithObjects(clusterPolicy).Build()
 
 		cp, gc, err := resolveActiveConfig(context.Background(), c)
 		require.NoError(t, err)
@@ -107,4 +119,28 @@ func TestResolveActiveConfig(t *testing.T) {
 		assert.Nil(t, cp)
 		assert.Nil(t, gc)
 	})
+}
+
+func TestResolveDefaultMode(t *testing.T) {
+	testCases := []struct {
+		description         string
+		clusterPolicyExists bool
+		gpuClusterExists    bool
+		preferredMode       string
+		expected            string
+	}{
+		{"both CRs, PREFERRED_MODE=dra", true, true, "dra", "dra"},
+		{"both CRs, PREFERRED_MODE=device-plugin", true, true, "device-plugin", "device-plugin"},
+		{"both CRs, PREFERRED_MODE unset defaults to device-plugin", true, true, "", "device-plugin"},
+		{"both CRs, invalid PREFERRED_MODE defaults to device-plugin", true, true, "bogus", "device-plugin"},
+		{"only ClusterPolicy ignores PREFERRED_MODE", true, false, "dra", "device-plugin"},
+		{"only GPUCluster ignores PREFERRED_MODE", false, true, "device-plugin", "dra"},
+		{"neither CR resolves to no mode", false, false, "dra", ""},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.description, func(t *testing.T) {
+			mode := resolveDefaultMode(tc.clusterPolicyExists, tc.gpuClusterExists, tc.preferredMode)
+			assert.Equal(t, tc.expected, mode)
+		})
+	}
 }

@@ -403,6 +403,26 @@ func TestRemoveAllGPUStateLabels(t *testing.T) {
 		require.True(t, modified)
 		require.Empty(t, labels[kubevirtDevicePluginDeployLabelKey])
 	})
+	t.Run("removes GPUCluster deploy labels", func(t *testing.T) {
+		labels := map[string]string{
+			driverDeployLabelKey:       "true",
+			draDriverDeployLabelKey:    "true",
+			draValidatorDeployLabelKey: "true",
+			gfdDeployLabelKey:          "true",
+			dcgmDeployLabelKey:         "true",
+			dcgmExporterDeployLabelKey: "true",
+			"other":                    "keep",
+		}
+		modified := removeAllGPUStateLabels(labels)
+		require.True(t, modified)
+		require.Equal(t, map[string]string{"other": "keep"}, labels)
+	})
+	t.Run("nothing to remove", func(t *testing.T) {
+		labels := map[string]string{"kubernetes.io/hostname": "plain"}
+		modified := removeAllGPUStateLabels(labels)
+		require.False(t, modified)
+		require.Equal(t, map[string]string{"kubernetes.io/hostname": "plain"}, labels)
+	})
 }
 
 func TestIsStateEnabled_SandboxAndKataDevicePlugin(t *testing.T) {

@@ -20,6 +20,7 @@ spec:
           effect: NoSchedule
       nodeSelector:
         nvidia.com/gpu.deploy.cc-manager: "true"
+        nvidia.com/gpu-operator.mode: "device-plugin"
       priorityClassName: system-node-critical
       serviceAccountName: nvidia-cc-manager
       containers:

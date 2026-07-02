@@ -20,6 +20,7 @@ spec:
           effect: NoSchedule
       nodeSelector:
         nvidia.com/gpu.deploy.kata-manager: "true"
+        nvidia.com/gpu-operator.mode: "device-plugin"
       priorityClassName: system-node-critical
       serviceAccountName: nvidia-kata-manager
       hostPID: true

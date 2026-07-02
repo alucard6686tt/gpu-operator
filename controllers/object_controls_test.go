@@ -1075,6 +1075,10 @@ func TestDevicePlugin(t *testing.T) {
 				return
 			}
 
+			// Scheduling gates on both the deploy label and the device-plugin plane mode label.
+			require.Equal(t, "true", ds.Spec.Template.Spec.NodeSelector["nvidia.com/gpu.deploy.device-plugin"])
+			require.Equal(t, "device-plugin", ds.Spec.Template.Spec.NodeSelector["nvidia.com/gpu-operator.mode"])
+
 			configManagerInitPresent := false
 			configManagerSidecarPresent := false
 			devicePluginImage := ""
@@ -1572,6 +1576,10 @@ func TestDCGMExporter(t *testing.T) {
 			if ds == nil {
 				return
 			}
+
+			// dcgm-exporter is shared with the DRA plane; the mode gate resolves ownership per node.
+			require.Equal(t, "true", ds.Spec.Template.Spec.NodeSelector["nvidia.com/gpu.deploy.dcgm-exporter"])
+			require.Equal(t, "device-plugin", ds.Spec.Template.Spec.NodeSelector["nvidia.com/gpu-operator.mode"])
 
 			dcgmExporterImage := ""
 			for _, container := range ds.Spec.Template.Spec.Containers {
