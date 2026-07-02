@@ -1,3 +1,5 @@
+{{- /* ClusterPolicy (device-plugin plane) and GPUCluster (DRA plane) may coexist;
+       per-node ownership is decided by the nvidia.com/gpu-operator.mode label. */ -}}
 apiVersion: nvidia.com/v1
 kind: ClusterPolicy
 metadata:

@@ -114,6 +114,7 @@ func TestReconcile(t *testing.T) {
 		name          string
 		useCRD        *bool
 		driverEnabled *bool
+		gccExists     bool
 		spec          nvidiav1alpha1.NVIDIADriverSpec
 		validator     validator.Validator
 		error         error
@@ -127,6 +128,16 @@ func TestReconcile(t *testing.T) {
 			},
 			error:       nil,
 			expectedLog: "useNvidiaDriverCRD is not enabled in ClusterPolicy",
+		},
+		{
+			name:      "driver CRD false but GPUCluster exists → reconciliation proceeds",
+			useCRD:    ptr.To(false),
+			gccExists: true,
+			validator: &FakeNodeSelectorValidator{
+				CustomError: errors.New("fake list error"),
+			},
+			error:       nil,
+			expectedLog: "nodeSelector validation failed",
 		},
 		{
 			name:   "ClusterPolicy has driver CRD true but validator errors",
@@ -188,6 +199,10 @@ func TestReconcile(t *testing.T) {
 
 			// Initialize fake client with ClusterPolicy (driver optional)
 			clientBuilder := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cp, driver)
+			if tc.gccExists {
+				gc := &nvidiav1alpha1.GPUCluster{ObjectMeta: metav1.ObjectMeta{Name: "config"}}
+				clientBuilder = clientBuilder.WithObjects(gc)
+			}
 			client := clientBuilder.Build()
 
 			updater := &FakeConditionUpdater{}

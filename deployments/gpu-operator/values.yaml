@@ -76,6 +76,10 @@ operator:
   #version: ""
   imagePullPolicy: IfNotPresent
   imagePullSecrets: []
+  # Additional environment variables for the operator container, e.g. PREFERRED_MODE
+  # ("device-plugin" or "dra"): the stack assigned to new GPU nodes when both a
+  # ClusterPolicy and a GPUCluster exist.
+  env: []
   priorityClassName: system-node-critical
   runtimeClass: nvidia
   use_ocp_driver_toolkit: false
@@ -556,6 +560,50 @@ ccManager:
   imagePullSecrets: []
   resources: {}
   hostNetwork: false
+
+# gpuCluster deploys the DRA-based GPU enablement stack (the NVIDIA DRA
+# driver for GPUs) via a GPUCluster CR, as an alternative to the classic
+# device-plugin path. This is an alpha feature (nvidia.com/v1alpha1) and is
+# disabled by default.
+#
+# NOTE: enabling this renders a GPUCluster CR instead of a ClusterPolicy CR
+# (mutually exclusive — the classic device-plugin path is not deployed). Requires an
+# NVIDIA driver (>= 580) with CDI, host-installed or via driver.enabled / an
+# NVIDIADriver CR; GPUCluster waits for driver readiness before deploying.
+gpuCluster:
+  enabled: false
+  draDriver:
+    repository: registry.k8s.io/dra-driver-nvidia
+    image: dra-driver-nvidia-gpu
+    version: v0.4.0
+    imagePullPolicy: IfNotPresent
+    imagePullSecrets: []
+    # featureGates toggles DRA driver feature gates; rendered as FEATURE_GATES.
+    # e.g. featureGates: {MPSSupport: true, NVMLDeviceHealthCheck: true}
+    featureGates: {}
+    # gpus configures the gpu.nvidia.com / mig.nvidia.com / vfio.gpu.nvidia.com
+    # capability (the gpus container of the kubelet-plugin DaemonSet).
+    gpus:
+      enabled: true
+      # kubeletPlugin overrides env/resources for the gpus container.
+      # Scheduling is opinionated and not configurable here. All fields are optional:
+      kubeletPlugin: {}
+      #   env: []                          # list of {name, value}
+      #   resources: {}                    # requests/limits
+      #   healthcheckPort: 51000           # negative value disables the health probe
+    # computeDomains configures the Multi-Node NVLink (MNNVL) compute-domain
+    # capability: a controller Deployment plus the compute-domains kubelet-plugin
+    # container.
+    computeDomains:
+      enabled: true
+      # controller overrides env/resources for the compute-domain controller Deployment.
+      # Scheduling is opinionated and not configurable here. All fields are optional:
+      controller: {}
+      #   env: []
+      #   resources: {}
+      # kubeletPlugin overrides the compute-domains container (same fields as
+      # gpus.kubeletPlugin above).
+      kubeletPlugin: {}
 
 # Array of extra K8s manifests to deploy
 # Supports use of custom Helm templates
