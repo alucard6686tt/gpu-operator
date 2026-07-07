@@ -95,6 +95,7 @@ var gpuStateLabels = map[string]map[string]string{
 		"nvidia.com/gpu.deploy.dcgm-exporter":         "true",
 		"nvidia.com/gpu.deploy.node-status-exporter":  "true",
 		"nvidia.com/gpu.deploy.operator-validator":    "true",
+		"nvidia.com/gpu.deploy.client":                "true",
 	},
 	gpuWorkloadConfigVMPassthrough: {
 		"nvidia.com/gpu.deploy.sandbox-device-plugin": "true",
