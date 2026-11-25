@@ -28,3 +28,12 @@
 {{ fail "gpuCluster.deployCR=true requires a Kubernetes cluster that supports Dynamic Resource Allocation (no resource.k8s.io DeviceClass API is served). When rendering offline with 'helm template', pass --api-versions resource.k8s.io/v1/DeviceClass" }}
 {{- end }}
 {{- end }}
+
+{{- if and (hasKey .Values.operator "replicaCount") (lt (int .Values.operator.replicaCount) 1) }}
+{{- fail "operator.replicaCount must be at least 1" }}
+{{- end }}
+
+{{- $pdb := .Values.operator.podDisruptionBudget | default dict }}
+{{- if and (dig "enabled" false $pdb) (le (int .Values.operator.replicaCount) 1) }}
+{{- fail "operator.podDisruptionBudget.enabled=true requires operator.replicaCount to be at least 2" }}
+{{- end }}

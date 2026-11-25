@@ -19,7 +19,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -28,7 +27,6 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	"go.uber.org/zap/zapcore"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 
 	"github.com/NVIDIA/k8s-operator-libs/pkg/upgrade"
 	apiconfigv1 "github.com/openshift/api/config/v1"
@@ -50,8 +48,8 @@ import (
 	clusterpolicyv1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
 	nvidiav1alpha1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1alpha1"
 	"github.com/NVIDIA/gpu-operator/controllers"
+	operatorcache "github.com/NVIDIA/gpu-operator/controllers/cache"
 	"github.com/NVIDIA/gpu-operator/controllers/clusterinfo"
-	"github.com/NVIDIA/gpu-operator/internal/consts"
 	"github.com/NVIDIA/gpu-operator/internal/info"
 	"github.com/NVIDIA/gpu-operator/internal/predicates"
 	// +kubebuilder:scaffold:imports
@@ -80,6 +78,7 @@ func main() {
 	var probeAddr string
 	var pprofAddr string
 	var renewDeadline time.Duration
+	var leaderElectionWarmup bool
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&pprofAddr, "pprof-bind-address", "",
@@ -96,6 +95,9 @@ func main() {
 			"Only enabled when the --leader-elect flag is set. "+
 			"If undefined, the renew deadline defaults to the controller-runtime manager's default RenewDeadline. "+
 			"By setting this option, the LeaseDuration is also set as RenewDealine + 5s.")
+	flag.BoolVar(&leaderElectionWarmup, "leader-election-warmup", false,
+		"Enable informer cache warmup for the operator's standby replicas. "+
+			"Only enabled when the --leader-elect flag is set.")
 
 	opts := zap.Options{
 		StacktraceLevel: zapcore.PanicLevel,
@@ -106,7 +108,7 @@ func main() {
 	logger := zap.New(zap.UseFlagOptions(&opts))
 	ctrl.SetLogger(logger)
 
-	ctrl.Log.Info(fmt.Sprintf("version: %s", info.GetVersionString()))
+	ctrl.Log.Info("Starting GPU Operator", "version", info.GetVersionString())
 
 	metricsOptions := metricsserver.Options{
 		BindAddress: metricsAddr,
@@ -126,25 +128,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	openshiftNamespace := consts.OpenshiftNamespace
-	cacheOptions := cache.Options{
-		DefaultNamespaces: map[string]cache.Config{
-			operatorNamespace: {},
-			// Also cache resources in the openshift namespace to retrieve ImageStreams when on an openshift  cluster
-			openshiftNamespace: {},
-		},
-	}
-
 	options := ctrl.Options{
-		Scheme:                  scheme,
-		Metrics:                 metricsOptions,
-		HealthProbeBindAddress:  probeAddr,
-		PprofBindAddress:        pprofAddr,
-		LeaderElection:          enableLeaderElection,
-		LeaderElectionNamespace: leaderElectionNamespace,
-		LeaderElectionID:        "53822513.nvidia.com",
-		WebhookServer:           webhookServer,
-		Cache:                   cacheOptions,
+		Scheme:                        scheme,
+		Metrics:                       metricsOptions,
+		HealthProbeBindAddress:        probeAddr,
+		PprofBindAddress:              pprofAddr,
+		LeaderElection:                enableLeaderElection,
+		LeaderElectionNamespace:       leaderElectionNamespace,
+		LeaderElectionID:              "53822513.nvidia.com",
+		LeaderElectionReleaseOnCancel: true,
+		WebhookServer:                 webhookServer,
+		Cache:                         operatorcache.Options(operatorNamespace),
+		NewCache:                      operatorcache.New,
 	}
 
 	if enableLeaderElection && int(renewDeadline) != 0 {
@@ -152,6 +147,10 @@ func main() {
 
 		options.RenewDeadline = &renewDeadline
 		options.LeaseDuration = &leaseDuration
+	}
+
+	if enableLeaderElection && leaderElectionWarmup {
+		options.Controller.EnableWarmup = &leaderElectionWarmup
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
@@ -254,6 +253,10 @@ func main() {
 	}
 	if err := mgr.AddReadyzCheck("check", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
+		os.Exit(1)
+	}
+	if err := mgr.Add(operatorMetrics); err != nil {
+		setupLog.Error(err, "unable to add operator metrics registration")
 		os.Exit(1)
 	}
 

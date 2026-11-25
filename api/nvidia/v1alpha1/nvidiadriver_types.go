@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/regclient/regclient/types/ref"
-	"golang.org/x/mod/semver"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -523,7 +523,7 @@ type NVIDIADriverStatus struct {
 //+kubebuilder:resource:scope=Cluster,shortName={"nvd","nvdriver","nvdrivers"}
 //+kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.state`,priority=0
 //+kubebuilder:printcolumn:name="Default",type=boolean,JSONPath=`.spec.default`,priority=0
-//+kubebuilder:printcolumn:name="Age",type=string,JSONPath=`.metadata.creationTimestamp`,priority=0
+//+kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`,priority=0
 
 // NVIDIADriver is the Schema for the nvidiadrivers API
 type NVIDIADriver struct {
@@ -732,14 +732,11 @@ func (d *NVIDIADriverSpec) IsOpenKernelModulesRequired() bool {
 		return true
 	}
 
-	gdsVersion := d.GPUDirectStorage.Version
-	if !strings.HasPrefix(gdsVersion, "v") {
-		gdsVersion = fmt.Sprintf("v%s", gdsVersion)
+	gdsVersion, err := semver.NewVersion(d.GPUDirectStorage.Version)
+	if err != nil {
+		return false
 	}
-	if semver.Compare(gdsVersion, consts.MinimumGDSVersionForOpenRM) >= 0 {
-		return true
-	}
-	return false
+	return gdsVersion.Compare(semver.MustParse(consts.MinimumGDSVersionForOpenRM)) >= 0
 }
 
 // IsVGPULicensingEnabled returns true if the vgpu driver license config is provided

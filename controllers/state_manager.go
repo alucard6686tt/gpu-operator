@@ -22,10 +22,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/go-logr/logr"
 	apiconfigv1 "github.com/openshift/api/config/v1"
 	configv1 "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
-	"golang.org/x/mod/semver"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -746,7 +746,7 @@ func (n *ClusterPolicyController) getRuntime() error {
 	for _, node := range list.Items {
 		rt, err := getRuntimeString(node)
 		if err != nil {
-			n.logger.Info(fmt.Sprintf("Unable to get runtime info for node %s: %v", node.Name, err))
+			n.logger.Info("Unable to get runtime info for node", "node", node.Name, "error", err)
 			continue
 		}
 		runtime = rt
@@ -785,8 +785,8 @@ func (n *ClusterPolicyController) init(ctx context.Context, reconciler *ClusterP
 		if err != nil {
 			return err
 		}
-		if !semver.IsValid(k8sVersion) {
-			return fmt.Errorf("k8s version detected '%s' is not a valid semantic version", k8sVersion)
+		if _, err := semver.NewVersion(k8sVersion); err != nil {
+			return fmt.Errorf("k8s version detected '%s' is not a valid semantic version: %w", k8sVersion, err)
 		}
 		n.k8sVersion = k8sVersion
 		n.logger.Info("Kubernetes version detected", "version", k8sVersion)
@@ -887,8 +887,7 @@ func (n *ClusterPolicyController) init(ctx context.Context, reconciler *ClusterP
 	if err != nil {
 		return err
 	}
-	n.logger.Info(fmt.Sprintf("Using container runtime: %s", n.runtime.String()))
-
+	n.logger.Info("Using container runtime", "runtime", n.runtime.String())
 	// fetch all kernel versions from the GPU nodes in the cluster
 	if n.singleton.Spec.Driver.IsEnabled() && n.singleton.Spec.Driver.UsePrecompiledDrivers() {
 		kernelVersionMap, err := n.getKernelVersionsMap()

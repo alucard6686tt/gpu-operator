@@ -28,12 +28,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/go-logr/logr"
 	apiconfigv1 "github.com/openshift/api/config/v1"
 	apiimagev1 "github.com/openshift/api/image/v1"
 	secv1 "github.com/openshift/api/security/v1"
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	"golang.org/x/mod/semver"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	nodev1 "k8s.io/api/node/v1"
@@ -725,7 +725,7 @@ func preprocessService(obj *corev1.Service, n ClusterPolicyController) error {
 
 	t, ok := transformations[obj.Name]
 	if !ok {
-		logger.V(2).Info(fmt.Sprintf("No transformation for Service '%s'", obj.Name))
+		logger.V(2).Info("No transformation for Service", "name", obj.Name)
 		return nil
 	}
 
@@ -763,7 +763,7 @@ func preProcessDaemonSet(obj *appsv1.DaemonSet, n ClusterPolicyController) error
 
 	t, ok := transformations[obj.Name]
 	if !ok {
-		logger.Info(fmt.Sprintf("No transformation for Daemonset '%s'", obj.Name))
+		logger.Info("No transformation for Daemonset", "name", obj.Name)
 		return nil
 	}
 
@@ -2389,7 +2389,7 @@ func TransformValidator(obj *appsv1.DaemonSet, config *gpuv1.ClusterPolicySpec, 
 	}
 
 	if validatorErr != nil {
-		n.logger.Info("WARN: errors transforming the validator containers: %v", validatorErr)
+		n.logger.Info("WARN: errors transforming the validator containers", "error", validatorErr)
 	}
 
 	// set hostNetwork for validator if specified
@@ -2421,7 +2421,7 @@ func TransformSandboxValidator(obj *appsv1.DaemonSet, config *gpuv1.ClusterPolic
 	}
 
 	if validatorErr != nil {
-		n.logger.Info("WARN: errors transforming the validator containers: %v", validatorErr)
+		n.logger.Info("WARN: errors transforming the validator containers", "error", validatorErr)
 	}
 
 	// set hostNetwork for sandbox-validator if specified
@@ -4032,7 +4032,7 @@ func isDeploymentReady(name string, n ClusterPolicyController) gpuv1.State {
 	list := &appsv1.DeploymentList{}
 	err := n.client.List(n.ctx, list, opts...)
 	if err != nil {
-		n.logger.Info("Could not get DeploymentList", err)
+		n.logger.Error(err, "Could not get DeploymentList")
 	}
 	n.logger.V(1).Info("Deployment", "NumberOfDeployment", len(list.Items))
 	if len(list.Items) == 0 {
@@ -4088,7 +4088,7 @@ func isDaemonSetReady(name string, n ClusterPolicyController) gpuv1.State {
 	list := &corev1.PodList{}
 	err = n.client.List(ctx, list, opts...)
 	if err != nil {
-		n.logger.Info("Could not get PodList", err)
+		n.logger.Error(err, "Could not get PodList")
 		return gpuv1.NotReady
 	}
 	n.logger.V(2).Info("Pod", "NumberOfPods", len(list.Items))
@@ -4248,7 +4248,7 @@ func Deployment(n ClusterPolicyController) (gpuv1.State, error) {
 func ocpHasDriverToolkitImageStream(n *ClusterPolicyController) (bool, error) {
 	ctx := n.ctx
 	found := &apiimagev1.ImageStream{}
-	name := "driver-toolkit"
+	name := consts.DriverToolkitImageStreamName
 	namespace := consts.OpenshiftNamespace
 	err := n.client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, found)
 	if err != nil {
@@ -4879,7 +4879,7 @@ func isPodReady(name string, n ClusterPolicyController, phase corev1.PodPhase) g
 	list := &corev1.PodList{}
 	err := n.client.List(ctx, list, opts...)
 	if err != nil {
-		n.logger.Info("Could not get PodList", err)
+		n.logger.Error(err, "Could not get PodList")
 	}
 	n.logger.V(1).Info("Pod", "NumberOfPods", len(list.Items))
 	if len(list.Items) == 0 {
@@ -5284,7 +5284,7 @@ func transformKataRuntimeClasses(n ClusterPolicyController) (gpuv1.State, error)
 	list := &nodev1.RuntimeClassList{}
 	err := n.client.List(ctx, list, opts...)
 	if err != nil {
-		n.logger.Info("Could not get Kata RuntimeClassList", err)
+		n.logger.Error(err, "Could not get Kata RuntimeClassList")
 		return gpuv1.NotReady, fmt.Errorf("error getting kata RuntimeClassList: %v", err)
 	}
 	n.logger.V(1).Info("Kata RuntimeClasses", "Number", len(list.Items))
@@ -5321,7 +5321,9 @@ func RuntimeClasses(n ClusterPolicyController) (gpuv1.State, error) {
 	}
 
 	createRuntimeClassFunc := transformRuntimeClass
-	if semver.Compare(n.k8sVersion, nodev1MinimumAPIVersion) <= 0 {
+	// An unparseable version is treated as older than the minimum, so fall back to the legacy API.
+	k8sVersion, err := semver.NewVersion(n.k8sVersion)
+	if err != nil || k8sVersion.Compare(semver.MustParse(nodev1MinimumAPIVersion)) <= 0 {
 		createRuntimeClassFunc = transformRuntimeClassLegacy
 	}
 

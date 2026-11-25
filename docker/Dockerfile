@@ -17,7 +17,7 @@
 # CUDA SAMPLES v12.9 is used as that is the latest version with Maxwell support.
 ARG CUDA_SAMPLES_VERSION=12.9
 
-FROM golang:1.27.3@sha256:f24164268fc1e741bbdc0066dbadcf1c8426c5a8489f0729c02c3905a53032fd AS builder
+FROM golang:1.27.4@sha256:08bcb99a38f85a265f9a93d1d3323e2440eec333380f3ea26ee0dec9264bb41c AS builder
 
 ARG GOPROXY="https://proxy.golang.org,direct"
 ENV GOPROXY=$GOPROXY
@@ -76,17 +76,19 @@ RUN curl -L https://codeload.github.com/NVIDIA/cuda-samples/tar.gz/refs/tags/v${
 # Build a static busybox layout: one binary plus applet symlinks (sh, rm,
 # ln, sleep, cat, ...) so PATH-resolved commands in init-container wrappers
 # and lifecycle hooks keep working on the non-*-dev* distroless base.
-FROM debian:trixie-slim@sha256:3a39a0592364683e6bab97937b72cad5a8fa6dcbbee90edb3bb48c7f8e94f258 AS shell
-RUN apt-get update \
- && apt-get install -y --no-install-recommends busybox-static \
- && rm -rf /var/lib/apt/lists/* \
- && mkdir /busybox \
+FROM busybox:1.37.0-musl@sha256:5cec3fc171c87218698e85a52af7087de727372aae264a787b8112901a5b0092 AS shell
+RUN mkdir /busybox \
  && cp /bin/busybox /busybox/busybox \
  && /busybox/busybox --install -s /busybox
 
+# Fail the build if busybox prefers applets (CONFIG_FEATURE_PREFER_APPLETS=y).
+# See https://github.com/NVIDIA/k8s-driver-manager/issues/299
+COPY hack/check-busybox-prefer-applets.sh /tmp/check-busybox-prefer-applets.sh
+RUN /tmp/check-busybox-prefer-applets.sh /busybox/busybox
+
 # The C/C++ distroless image is used as a base since the CUDA vectorAdd
 # sample application depends on C/C++ libraries.
-FROM nvcr.io/nvidia/distroless/cc:v4.1.6@sha256:1c3f23958b14384dd07e57696954c6722861c3ee5de372fdc2af75a8e4b75313
+FROM nvcr.io/nvidia/distroless/cc:v4.2.3@sha256:60a83abb3f1b2e3c58d80c37bde9baa1c0f5c316701ce93f52f35399b91c0143
 
 ENV NVIDIA_VISIBLE_DEVICES=void
 
